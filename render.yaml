@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: luffytaro-bot
+    runtime: node
+    repo: https://github.com/yourusername/luffytaro-bot
+    plan: free
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: PREFIX
+        value: .
+      - key: OWNER_NUMBER
+        value: 917866052212
+      - key: OWNER_NAME
+        value: Luffy
+      - key: BOT_NAME
+        value: LuffyTaro Bot
+      - key: AUTH_TYPE
+        value: pairing
+      - key: AUTO_READ
+        value: true
+      - key: MODE
+        value: public
