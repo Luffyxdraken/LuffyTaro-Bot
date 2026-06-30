@@ -1,24 +1,24 @@
-require("dotenv").config();
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-module.exports = {
-    BOT_NAME: process.env.BOT_NAME || "LuffyTaro Bot",
-    OWNER_NAME: process.env.OWNER_NAME || "Luffy",
-    OWNER_NUMBER: process.env.OWNER_NUMBER || "917866052212",
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-    PREFIX: process.env.PREFIX || ".",
+dotenv.config();
 
-    MODE: process.env.MODE || "private",
-
-    SESSION_ID: process.env.SESSION_ID || "",
-
-    ALIVE_MESSAGE:
-`🤖 LuffyTaro Bot
-
-✅ Status : Online
-👑 Owner : Luffy
-⚡ Version : 1.0.0
-
-Created by LuffyTaro`,
-
-    FOOTER: "© LuffyTaro Bot"
+export const config = {
+    port: process.env.PORT || 3000,
+    prefix: process.env.PREFIX || '.',
+    ownerNumber: process.env.OWNER_NUMBER || '917866052212',
+    ownerName: process.env.OWNER_NAME || 'Luffy',
+    botName: process.env.BOT_NAME || 'LuffyTaro Bot',
+    authType: process.env.AUTH_TYPE || 'pairing', // 'pairing' or 'qr'
+    sessionDir: path.resolve(__dirname, process.env.SESSION_DIR || './session'),
+    databasePath: path.resolve(__dirname, process.env.DATABASE_PATH || './database/luffytaro.db'),
+    autoRead: process.env.AUTO_READ === 'true',
+    autoTyping: process.env.AUTO_TYPING === 'true',
+    autoRecording: process.env.AUTO_RECORDING === 'true',
+    mode: process.env.MODE || 'public', // 'public' or 'private'
+    version: '1.0.0'
 };
