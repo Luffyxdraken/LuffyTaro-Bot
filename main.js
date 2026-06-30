@@ -41,7 +41,7 @@ async function startLuffyBot() {
     const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    client = makeWASocket.default({
+    client = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: config.authType === 'qr',
