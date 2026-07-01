@@ -16,26 +16,34 @@ const config = {
 
 // 📂 AUTOMATIC PLUGINS LOADER ENGINE
 const commands = new Map();
+
+// Global register function attached safely to modern globalThis scope
+globalThis.registerCommand = function(cmdObj) {
+    if (cmdObj && cmdObj.name) {
+        commands.set(cmdObj.name, cmdObj);
+    }
+};
+
 async function loadPlugins() {
     const pluginsDir = path.join(__dirname, 'plugins');
-    if (!fs.existsSync(pluginsDir)) return;
+    if (!fs.existsSync(pluginsDir)) {
+        console.log(chalk.yellow('⚠️ Plugins directory does not exist yet. Creating folder...'));
+        fs.mkdirSync(pluginsDir, { recursive: true });
+        return;
+    }
 
     const files = fs.readdirSync(pluginsDir).filter(file => file.endsWith('.js'));
     for (const file of files) {
         try {
-            // Dynamically import every file in your plugins directory
-            await import(`./plugins/${file}`);
+            // Dynamically import every file inside your plugins directory using file URL
+            const fileUrl = new URL(`./plugins/${file}`, import.meta.url).href;
+            await import(fileUrl);
             console.log(chalk.green(`🔌 Loaded plugin: ${file}`));
         } catch (e) {
             console.error(chalk.red(`❌ Failed to load plugin ${file}:`), e);
         }
     }
 }
-
-// Global register function to catch plugins from your plugins folder
-global.registerCommand = function(cmdObj) {
-    commands.set(cmdObj.name, cmdObj);
-};
 
 async function startBot() {
     if (!fs.existsSync(config.sessionDir)) {
@@ -65,7 +73,7 @@ async function startBot() {
         browser: ['LuffyBot', 'Chrome', '20.0.04']
     });
 
-    // Load plugins after client initiates
+    // Load plugins safely after client initiates
     await loadPlugins();
 
     // 🔑 PAIRING CODE
@@ -97,11 +105,11 @@ async function startBot() {
             console.log(chalk.red('Connection band:', lastDisconnect.error));
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(chalk.bold.green('✅ Bot connected! Your plugins are fully armed.'));
+            console.log(chalk.bold.green(`✅ LuffyTaro Bot fully loaded with ${commands.size} active commands!`));
         }
     });
 
-    // 🔔 GROUP PARTICIPANTS LISTENER (WELCOME/GOODBYE ENGINE)
+    // 🔔 GROUP WELCOME ENGINE
     client.ev.on('group-participants.update', async (update) => {
         try {
             const { id, participants, action } = update;
@@ -118,13 +126,9 @@ async function startBot() {
                     const welcomeText = `👋 Welcome ${userTag} to *${metadata.subject}*!\n\n✨ Enjoy your stay and follow the rules.`;
                     await client.sendMessage(id, { text: welcomeText, mentions: [num] });
                 }
-                if (action === 'remove' && groupSettings?.goodbye === 'true') {
-                    const goodbyeText = `🏃 Goodbye ${userTag}.\n\nYou will be missed! 🏴‍☠️`;
-                    await client.sendMessage(id, { text: goodbyeText, mentions: [num] });
-                }
             }
         } catch (err) {
-            console.error('Error handling group entry/exit:', err);
+            console.error('Error handling group exit/entry:', err);
         }
     });
 
@@ -147,9 +151,9 @@ async function startBot() {
             const isGroup = from.endsWith('@g.us');
             const sender = isGroup ? mek.key.participant : from;
 
-            // Route execution straight into your imported plugins folder files!
+            // Route execution straight into your plugin map array
             const runCmd = commands.get(cmdName);
-            if (runCmd) {
+            if (runCmd && typeof runCmd.execute === 'function') {
                 await runCmd.execute({ 
                     client, 
                     from, 
