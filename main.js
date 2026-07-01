@@ -11,16 +11,15 @@ const __dirname = path.dirname(__filename);
 const config = {
     sessionDir: './sessions',
     authType: 'pairing', 
+    botNumber: process.env.BOT_NUMBER || '',
     ownerNumber: process.env.OWNER_NUMBER || '',
 };
 
-// 📂 EXPORT COMMAND TRACKING MAP FOR LIB/PLUGINS LINK
 export const commands = new Map();
 
 export function registerCommand(cmdObj) {
     if (cmdObj && cmdObj.name) {
         commands.set(cmdObj.name, cmdObj);
-        // Also map aliases if they exist in the plugin
         if (cmdObj.aliases && Array.isArray(cmdObj.aliases)) {
             for (const alias of cmdObj.aliases) {
                 commands.set(alias, cmdObj);
@@ -49,16 +48,16 @@ async function loadPlugins() {
 }
 
 async function startBot() {
+    // Force clean directory generation with absolute permissions flags
     if (!fs.existsSync(config.sessionDir)) {
-        fs.mkdirSync(config.sessionDir, { recursive: true });
+        fs.mkdirSync(config.sessionDir, { recursive: true, mode: 0o777 });
     }
 
-    // 🔐 SESSION LOAD: Base64 ENV
     if (process.env.SESSION_ID && !fs.existsSync(path.join(config.sessionDir, 'creds.json'))) {
         console.log(chalk.yellow('📦 SESSION_ID env se session bana raha hu...'));
         try {
             const sessionData = Buffer.from(process.env.SESSION_ID.trim(), 'base64').toString('utf-8');
-            fs.writeFileSync(path.join(config.sessionDir, 'creds.json'), sessionData);
+            fs.writeFileSync(path.join(config.sessionDir, 'creds.json'), sessionData, { mode: 0o666 });
             console.log(chalk.green('✅ Session restore ho gaya'));
         } catch (e) {
             console.log(chalk.red('❌ SESSION_ID corrupt hai'));
@@ -76,10 +75,8 @@ async function startBot() {
         browser: ['LuffyBot', 'Chrome', '20.0.04']
     });
 
-    // Load plugins safely
     await loadPlugins();
 
-    // 🔑 PAIRING CODE
     const credsPath = path.join(config.sessionDir, 'creds.json');
     const hasCredsOnDisk = fs.existsSync(credsPath);
     const isRegistered = state.creds?.registered || hasCredsOnDisk;
@@ -87,19 +84,25 @@ async function startBot() {
     if (config.authType === 'pairing' && !isRegistered) {
         setTimeout(async () => {
             if (client.authState.creds.registered) return;
-            const phoneNumber = process.env.BOT_NUMBER || config.ownerNumber;
-            if (!phoneNumber) {
-                console.log(chalk.red('❌ BOT_NUMBER env daalo 91xxxxxxxxxx format mein'));
+            const targetPhone = config.botNumber.replace(/[^0-9]/g, '');
+            
+            if (!targetPhone) {
+                console.log(chalk.red('❌ CRITICAL ERROR: BOT_NUMBER env setting is missing or empty!'));
                 process.exit(1);
             }
-            const code = await client.requestPairingCode(phoneNumber.replace(/[^0-9]/g, ''));
+            
+            console.log(chalk.cyan(`📡 Requesting pairing code specifically for Bot Number: ${targetPhone}`));
+            const code = await client.requestPairingCode(targetPhone);
             console.log(chalk.bold.yellow('\n🤖 PAIRING CODE: ' + code.match(/.{1,4}/g).join('-') + '\n'));
         }, 3000);
     } else {
         console.log(chalk.bold.green('💾 Session mila. Pairing skip.'));
     }
 
-    client.ev.on('creds.update', saveCreds);
+    // Force flush state storage safely to disk on every single key update event
+    client.ev.on('creds.update', async () => {
+        await saveCreds();
+    });
 
     client.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
@@ -112,7 +115,6 @@ async function startBot() {
         }
     });
 
-    // 💬 CENTRAL COMMAND HANDLER LOOP
     client.ev.on('messages.upsert', async (msg) => {
         try {
             const mek = msg.messages[0];
@@ -131,7 +133,6 @@ async function startBot() {
             const isGroup = from.endsWith('@g.us');
             const sender = isGroup ? mek.key.participant : from;
 
-            // Route execution down to the target plugin file module map
             const runCmd = commands.get(cmdName);
             if (runCmd && typeof runCmd.execute === 'function') {
                 await runCmd.execute({ 
