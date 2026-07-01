@@ -65,16 +65,17 @@ async function startLuffyBot() {
     const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    client = makeWASocket.default({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: config.authType === 'qr',
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-        },
-        browser: ['Ubuntu', 'Chrome', '20.0.04']
-    });
+    client = makeWASocket({
+    version,
+    logger: pino({ level: 'silent' }),
+    printQRInTerminal: config.authType === 'qr',
+    auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+    },
+    browser: ['Ubuntu', 'Chrome', '20.0.04']
+});
+
 
     // Handle Pairing Setup Scenario
     if (config.authType === 'pairing' && !client.authState.creds.registered) {
