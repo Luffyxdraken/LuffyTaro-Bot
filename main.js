@@ -133,7 +133,7 @@ async function startLuffyBot() {
                          msg.message.imageMessage?.caption || 
                          msg.message.videoMessage?.caption || '';
 
-            const prefix = config.prefix || '.';
+            const prefix = config.prefix || '/';
             const isCmd = body.startsWith(prefix);
             if (!isCmd) return;
 
