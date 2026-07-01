@@ -3,20 +3,46 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import pino from 'pino';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const config = {
     sessionDir: './sessions',
-    authType: 'pairing', // pairing ya qr
+    authType: 'pairing', 
     ownerNumber: process.env.OWNER_NUMBER || '',
 };
 
+// 📂 AUTOMATIC PLUGINS LOADER ENGINE
+const commands = new Map();
+async function loadPlugins() {
+    const pluginsDir = path.join(__dirname, 'plugins');
+    if (!fs.existsSync(pluginsDir)) return;
+
+    const files = fs.readdirSync(pluginsDir).filter(file => file.endsWith('.js'));
+    for (const file of files) {
+        try {
+            // Dynamically import every file in your plugins directory
+            await import(`./plugins/${file}`);
+            console.log(chalk.green(`🔌 Loaded plugin: ${file}`));
+        } catch (e) {
+            console.error(chalk.red(`❌ Failed to load plugin ${file}:`), e);
+        }
+    }
+}
+
+// Global register function to catch plugins from your plugins folder
+global.registerCommand = function(cmdObj) {
+    commands.set(cmdObj.name, cmdObj);
+};
+
 async function startBot() {
-    // Check if sessions directory exists, if not create it
     if (!fs.existsSync(config.sessionDir)) {
         fs.mkdirSync(config.sessionDir, { recursive: true });
     }
 
-    // 🔐 SESSION LOAD: Base64 ENV se ya file se
+    // 🔐 SESSION LOAD: Base64 ENV
     if (process.env.SESSION_ID && !fs.existsSync(path.join(config.sessionDir, 'creds.json'))) {
         console.log(chalk.yellow('📦 SESSION_ID env se session bana raha hu...'));
         try {
@@ -39,7 +65,10 @@ async function startBot() {
         browser: ['LuffyBot', 'Chrome', '20.0.04']
     });
 
-    // 🔑 PAIRING CODE - Sirf tab jab session nahi hai
+    // Load plugins after client initiates
+    await loadPlugins();
+
+    // 🔑 PAIRING CODE
     const credsPath = path.join(config.sessionDir, 'creds.json');
     const hasCredsOnDisk = fs.existsSync(credsPath);
     const isRegistered = state.creds?.registered || hasCredsOnDisk;
@@ -68,39 +97,70 @@ async function startBot() {
             console.log(chalk.red('Connection band:', lastDisconnect.error));
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(chalk.bold.green('✅ Bot connected!'));
+            console.log(chalk.bold.green('✅ Bot connected! Your plugins are fully armed.'));
         }
     });
 
-    // 💬 MESSAGE LISTENER / COMMANDS WORKING
+    // 🔔 GROUP PARTICIPANTS LISTENER (WELCOME/GOODBYE ENGINE)
+    client.ev.on('group-participants.update', async (update) => {
+        try {
+            const { id, participants, action } = update;
+            const dbPath = './lib/db.js';
+            if (!fs.existsSync(dbPath)) return;
+            
+            const { getGroupSetting } = await import('./lib/db.js');
+            const groupSettings = await getGroupSetting(id);
+            const metadata = await client.groupMetadata(id);
+            
+            for (let num of participants) {
+                const userTag = `@${num.split('@')[0]}`;
+                if (action === 'add' && groupSettings?.welcome === 'true') {
+                    const welcomeText = `👋 Welcome ${userTag} to *${metadata.subject}*!\n\n✨ Enjoy your stay and follow the rules.`;
+                    await client.sendMessage(id, { text: welcomeText, mentions: [num] });
+                }
+                if (action === 'remove' && groupSettings?.goodbye === 'true') {
+                    const goodbyeText = `🏃 Goodbye ${userTag}.\n\nYou will be missed! 🏴‍☠️`;
+                    await client.sendMessage(id, { text: goodbyeText, mentions: [num] });
+                }
+            }
+        } catch (err) {
+            console.error('Error handling group entry/exit:', err);
+        }
+    });
+
+    // 💬 CENTRAL COMMAND HANDLER LOOP
     client.ev.on('messages.upsert', async (msg) => {
         try {
             const mek = msg.messages[0];
-            if (!mek.message) return;
+            if (!mek.message || mek.key.fromMe) return;
             
-            // Text extract karna group ya personal chat se
             const messageType = Object.keys(mek.message)[0];
             const body = (messageType === 'conversation') ? mek.message.conversation : 
                          (messageType === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : 
                          (messageType === 'imageMessage') ? mek.message.imageMessage.caption : '';
             
-            if (!body) return;
+            if (!body || !body.startsWith('.')) return;
 
+            const args = body.slice(1).trim().split(/ +/);
+            const cmdName = args.shift().toLowerCase();
             const from = mek.key.remoteJid;
-            const isCmd = body.startsWith('.'); // Prefix filter
-            const command = isCmd ? body.slice(1).trim().split(/ +/).shift().toLowerCase() : null;
-            
-            // Simple Test Command Execution
-            if (command === 'ping') {
-                await client.sendMessage(from, { text: '🏓 Pong! LuffyTaro Bot online hai.' }, { quoted: mek });
-            }
+            const isGroup = from.endsWith('@g.us');
+            const sender = isGroup ? mek.key.participant : from;
 
-            if (command === 'hi' || command === 'hello') {
-                await client.sendMessage(from, { text: '🍖 Yo! Main hu LuffyTaro Bot. Main kaise help karu?' }, { quoted: mek });
+            // Route execution straight into your imported plugins folder files!
+            const runCmd = commands.get(cmdName);
+            if (runCmd) {
+                await runCmd.execute({ 
+                    client, 
+                    from, 
+                    msg: mek, 
+                    isGroup, 
+                    sender, 
+                    args 
+                });
             }
-
         } catch (err) {
-            console.error('Error processing message logic:', err);
+            console.error('Error running plug-in script pipeline:', err);
         }
     });
 }
