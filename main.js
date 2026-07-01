@@ -14,20 +14,24 @@ const config = {
     ownerNumber: process.env.OWNER_NUMBER || '',
 };
 
-// 📂 AUTOMATIC PLUGINS LOADER ENGINE
-const commands = new Map();
+// 📂 EXPORT COMMAND TRACKING MAP FOR LIB/PLUGINS LINK
+export const commands = new Map();
 
-// Global register function attached safely to modern globalThis scope
-globalThis.registerCommand = function(cmdObj) {
+export function registerCommand(cmdObj) {
     if (cmdObj && cmdObj.name) {
         commands.set(cmdObj.name, cmdObj);
+        // Also map aliases if they exist in the plugin
+        if (cmdObj.aliases && Array.isArray(cmdObj.aliases)) {
+            for (const alias of cmdObj.aliases) {
+                commands.set(alias, cmdObj);
+            }
+        }
     }
-};
+}
 
 async function loadPlugins() {
     const pluginsDir = path.join(__dirname, 'plugins');
     if (!fs.existsSync(pluginsDir)) {
-        console.log(chalk.yellow('⚠️ Plugins directory does not exist yet. Creating folder...'));
         fs.mkdirSync(pluginsDir, { recursive: true });
         return;
     }
@@ -35,7 +39,6 @@ async function loadPlugins() {
     const files = fs.readdirSync(pluginsDir).filter(file => file.endsWith('.js'));
     for (const file of files) {
         try {
-            // Dynamically import every file inside your plugins directory using file URL
             const fileUrl = new URL(`./plugins/${file}`, import.meta.url).href;
             await import(fileUrl);
             console.log(chalk.green(`🔌 Loaded plugin: ${file}`));
@@ -73,7 +76,7 @@ async function startBot() {
         browser: ['LuffyBot', 'Chrome', '20.0.04']
     });
 
-    // Load plugins safely after client initiates
+    // Load plugins safely
     await loadPlugins();
 
     // 🔑 PAIRING CODE
@@ -105,30 +108,7 @@ async function startBot() {
             console.log(chalk.red('Connection band:', lastDisconnect.error));
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
-            console.log(chalk.bold.green(`✅ LuffyTaro Bot fully loaded with ${commands.size} active commands!`));
-        }
-    });
-
-    // 🔔 GROUP WELCOME ENGINE
-    client.ev.on('group-participants.update', async (update) => {
-        try {
-            const { id, participants, action } = update;
-            const dbPath = './lib/db.js';
-            if (!fs.existsSync(dbPath)) return;
-            
-            const { getGroupSetting } = await import('./lib/db.js');
-            const groupSettings = await getGroupSetting(id);
-            const metadata = await client.groupMetadata(id);
-            
-            for (let num of participants) {
-                const userTag = `@${num.split('@')[0]}`;
-                if (action === 'add' && groupSettings?.welcome === 'true') {
-                    const welcomeText = `👋 Welcome ${userTag} to *${metadata.subject}*!\n\n✨ Enjoy your stay and follow the rules.`;
-                    await client.sendMessage(id, { text: welcomeText, mentions: [num] });
-                }
-            }
-        } catch (err) {
-            console.error('Error handling group exit/entry:', err);
+            console.log(chalk.bold.green(`✅ LuffyTaro Bot fully loaded with ${commands.size} active routing commands!`));
         }
     });
 
@@ -151,7 +131,7 @@ async function startBot() {
             const isGroup = from.endsWith('@g.us');
             const sender = isGroup ? mek.key.participant : from;
 
-            // Route execution straight into your plugin map array
+            // Route execution down to the target plugin file module map
             const runCmd = commands.get(cmdName);
             if (runCmd && typeof runCmd.execute === 'function') {
                 await runCmd.execute({ 
