@@ -21,9 +21,8 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
-// HTTP Health checks & Keep-Alive binding
+// HTTP Health checks & Keep-Alive binding for Render
 app.get('/', (req, res) => res.status(200).json({ status: 'online', bot: config.botName }));
 app.listen(config.port, () => console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`)));
 
@@ -34,13 +33,32 @@ async function startLuffyBot() {
     await initDatabase();
     await loadPlugins();
 
+    // 💾 AUTO-SESSION RECOVERY LAYER
     if (!fs.existsSync(config.sessionDir)) {
         fs.mkdirSync(config.sessionDir, { recursive: true });
     }
 
+    // Check if Render wiped your files but you have a SESSION_ID variable saved
+    if (process.env.SESSION_ID && fs.readdirSync(config.sessionDir).length === 0) {
+        try {
+            console.log(chalk.cyan('📦 Ephemeral disk reset detected. Restoring WhatsApp session...'));
+            
+            // Decode the long text string back into real JSON
+            const decodedSession = Buffer.from(process.env.SESSION_ID.trim(), 'base64').toString('utf-8');
+            
+            // Re-write your credentials file automatically
+            fs.writeFileSync(path.join(config.sessionDir, 'creds.json'), decodedSession);
+            console.log(chalk.green('✅ Session successfully synchronized from Render variables!'));
+        } catch (e) {
+            console.error(chalk.red('❌ Failed to extract session string structure: '), e);
+        }
+    }
+
+    // Load the credentials securely
     const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
+    // FIXED: Corrected Baileys ES module instantiation structure
     client = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
@@ -52,17 +70,20 @@ async function startLuffyBot() {
         browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
-    // Handle Pairing Setup Scenario
+    // 🔑 Handle Pairing Setup Scenario (Only triggers if SESSION_ID isn't set or valid)
     if (config.authType === 'pairing' && !client.authState.creds.registered) {
         setTimeout(async () => {
-            const phoneNumber = config.ownerNumber.replace(/[^0-9]/g, '');
+            const targetNumber = process.env.BOT_NUMBER || config.ownerNumber;
+            const phoneNumber = targetNumber.replace(/[^0-9]/g, '');
+            
             if (!phoneNumber) {
-                console.log(chalk.red('❌ OWNER_NUMBER must be populated in environment setup for pairing connection!'));
+                console.log(chalk.red('❌ No phone number found to generate a pairing code!'));
                 process.exit(1);
             }
             try {
                 const code = await client.requestPairingCode(phoneNumber);
                 console.log(chalk.bold.yellow('\n🤖 ---------------- LUFFYTARO PAIRING ENGINE ---------------- 🤖'));
+                console.log(chalk.bold.white(`     Generating pairing code for WhatsApp Number: ${phoneNumber}`));
                 console.log(chalk.bold.white(`     Use the code below to pair your bot within WhatsApp App:`));
                 console.log(chalk.bold.cyan(`\n                     👉   ${code}   👈\n`));
                 console.log(chalk.bold.yellow('-------------------------------------------------------------\n'));
@@ -72,92 +93,40 @@ async function startLuffyBot() {
         }, 3000);
     }
 
+    // 💾 Save session tokens when updated
     client.ev.on('creds.update', saveCreds);
 
-    client.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr && config.authType === 'qr') {
-            console.log(chalk.yellow('📸 Scan the QR code displayed above to establish initialization.'));
-        }
-
+    // 📡 Handle Connection Updates (Disconnects & Reconnects)
+    client.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
-                ? lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut 
-                : true;
-            
-            console.log(chalk.red(`⚠️ Connection severed due to: ${lastDisconnect?.error}. Reconnecting context: ${shouldReconnect}`));
-            
+            const shouldReconnect = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut : true;
+            console.log(chalk.red(`🔌 Connection closed due to: ${lastDisconnect.error}. Reconnecting: ${shouldReconnect}`));
             if (shouldReconnect) {
                 startLuffyBot();
             } else {
-                console.log(chalk.bold.red('❌ Device Session permanently logged out. Clear local session path and restart.'));
-                process.exit(1);
+                console.log(chalk.bold.red('❌ Session completely logged out. Please clear cache and repair.'));
             }
         } else if (connection === 'open') {
-            console.log(chalk.bold.green(`\n✅ ${config.botName} operational on multi-device handshake interface!`));
-            console.log(chalk.cyan(`👑 Master: ${config.ownerName} [${config.ownerNumber}]`));
+            console.log(chalk.bold.green(`\n✅ ${config.botName} operational and bridged successfully via WebSocket!`));
         }
     });
 
+    // 💬 MESSAGE INBOUND LISTENER (Commands router)
     client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
             const msg = chatUpdate.messages[0];
-            if (!msg.message) return;
-            if (msg.key && msg.key.remoteJid === 'status@broadcast') return;
+            if (!msg.message || msg.key.fromMe) return;
 
             const from = msg.key.remoteJid;
             const isGroup = from.endsWith('@g.us');
+            const sender = isGroup ? (msg.key.participant || '') : from;
             
-            // Text Extraction Parsing Block
-            let body = '';
-            if (msg.message.conversation) body = msg.message.conversation;
-            else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
-            else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
-            else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
-            
-            const sender = isGroup ? msg.key.participant : from;
-            const isOwner = sender.replace(/[^0-9]/g, '') === config.ownerNumber.replace(/[^0-9]/g, '');
-            const currentMode = await getSetting('mode') || 'public';
-            
-            if (currentMode === 'private' && !isOwner) return;
+            // Extract raw string content
+            const body = msg.message.conversation || 
+                         msg.message.extendedTextMessage?.text || 
+                         msg.message.imageMessage?.caption || 
+                         msg.message.videoMessage?.caption || '';
 
-            // Trigger presence behaviors dynamically
-            if (config.autoRead) await client.readMessages([msg.key]);
-            if (config.autoTyping) await client.sendPresenceUpdate('composing', from);
-            if (config.autoRecording) await client.sendPresenceUpdate('recording', from);
-
-            const isCmd = body.startsWith(config.prefix);
-            if (!isCmd) return;
-
-            const args = body.slice(config.prefix.length).trim().split(/ +/);
-            const commandName = args.shift().toLowerCase();
-            
-            const matchedCmd = commands.find(cmd => cmd.name === commandName || (cmd.aliases && cmd.aliases.includes(commandName)));
-            
-            if (matchedCmd) {
-                if (matchedCmd.category === 'owner' && !isOwner) {
-                    return await client.sendMessage(from, { text: '❌ This access sequence is restricted exclusively to the Bot Overlord.' }, { quoted: msg });
-                }
-                
-                const context = {
-                    client,
-                    msg,
-                    from,
-                    isGroup,
-                    sender,
-                    args,
-                    isOwner,
-                    body,
-                    startTime
-                };
-                
-                await matchedCmd.execute(context);
-            }
-        } catch (err) {
-            console.error(chalk.red('Critical failure inside routing engine loop: '), err);
-        }
-    });
-}
-
-startLuffyBot();
+            const prefix = config.prefix || '.';
+            if (!body
