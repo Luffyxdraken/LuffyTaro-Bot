@@ -33,32 +33,32 @@ async function startLuffyBot() {
     await initDatabase();
     await loadPlugins();
 
-    // 💾 AUTO-SESSION RECOVERY LAYER
+    // 💾 Ensure directories exist
     if (!fs.existsSync(config.sessionDir)) {
         fs.mkdirSync(config.sessionDir, { recursive: true });
     }
 
-    // Check if Render wiped your files but you have a SESSION_ID variable saved
-    if (process.env.SESSION_ID && fs.readdirSync(config.sessionDir).length === 0) {
+    // 📦 FORCE-SYNC SESSION ID OVERWRITES
+    if (process.env.SESSION_ID) {
         try {
-            console.log(chalk.cyan('📦 Ephemeral disk reset detected. Restoring WhatsApp session...'));
+            console.log(chalk.cyan('📦 Synchronizing session data from Render environment variables...'));
+            // Remove quotation marks and white space that cloud hosts sometimes add
+            const cleanSessionStr = process.env.SESSION_ID.replace(/["'\s]/g, '').trim();
+            const decodedSession = Buffer.from(cleanSessionStr, 'base64').toString('utf-8');
             
-            // Decode the long text string back into real JSON
-            const decodedSession = Buffer.from(process.env.SESSION_ID.trim(), 'base64').toString('utf-8');
-            
-            // Re-write your credentials file automatically
+            // Overwrite/Write creds file explicitly to assure system updates match
             fs.writeFileSync(path.join(config.sessionDir, 'creds.json'), decodedSession);
-            console.log(chalk.green('✅ Session successfully synchronized from Render variables!'));
+            console.log(chalk.green('✅ creds.json written successfully!'));
         } catch (e) {
             console.error(chalk.red('❌ Failed to extract session string structure: '), e);
         }
     }
 
-    // Load the credentials securely
+    // Load credentials from disk
     const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    // FIXED: Corrected Baileys ES module instantiation structure
+    // FIXED: Strong module mapping instance setup
     client = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
@@ -73,11 +73,15 @@ async function startLuffyBot() {
     // 💾 Save session tokens when updated
     client.ev.on('creds.update', saveCreds);
 
-    // 🔑 Handle Pairing Setup Scenario (Bypassed if credentials exist or are active)
+    // 🔑 SECURE PAIRING CODE GUARD (Never run if creds exist)
     const hasCredsOnDisk = fs.existsSync(path.join(config.sessionDir, 'creds.json'));
+    const isRegistered = client.authState?.creds?.registered || hasCredsOnDisk;
 
-    if (config.authType === 'pairing' && !client.authState.creds.registered && !hasCredsOnDisk) {
+    if (config.authType === 'pairing' && !isRegistered) {
         setTimeout(async () => {
+            // Re-read registration check right before triggering code
+            if (client.authState?.creds?.registered) return;
+            
             const targetNumber = process.env.BOT_NUMBER || config.ownerNumber;
             const phoneNumber = targetNumber.replace(/[^0-9]/g, '');
             
@@ -88,16 +92,14 @@ async function startLuffyBot() {
             try {
                 const code = await client.requestPairingCode(phoneNumber);
                 console.log(chalk.bold.yellow('\n🤖 ---------------- LUFFYTARO PAIRING ENGINE ---------------- 🤖'));
-                console.log(chalk.bold.white(`     Generating pairing code for WhatsApp Number: ${phoneNumber}`));
-                console.log(chalk.bold.white(`     Use the code below to pair your bot within WhatsApp App:`));
                 console.log(chalk.bold.cyan(`\n                     👉   ${code}   👈\n`));
                 console.log(chalk.bold.yellow('-------------------------------------------------------------\n'));
             } catch (err) {
                 console.error(chalk.red('Failed to request pairing code: '), err);
             }
-        }, 3000);
+        }, 5000); // 5 second layout delay to allow websocket handshake confirmation
     } else {
-        console.log(chalk.green('💾 Active credentials or session file detected. Bypassing pairing layout.'));
+        console.log(chalk.bold.green('💾 Valid session detected. Pairing Code Generation explicitly disabled.'));
     }
 
     // 📡 Handle Connection Updates (Disconnects & Reconnects)
@@ -126,7 +128,6 @@ async function startLuffyBot() {
             const isGroup = from.endsWith('@g.us');
             const sender = isGroup ? (msg.key.participant || '') : from;
             
-            // Extract raw string content
             const body = msg.message.conversation || 
                          msg.message.extendedTextMessage?.text || 
                          msg.message.imageMessage?.caption || 
@@ -136,17 +137,13 @@ async function startLuffyBot() {
             const isCmd = body.startsWith(prefix);
             if (!isCmd) return;
 
-            // Parse command and arguments
             const args = body.trim().split(/ +/).slice(1);
             const commandName = body.slice(prefix.length).trim().split(/ +/).shift().toLowerCase();
 
-            // Find command via name or alias array mapping
             const cmd = commands.get(commandName) || commands.find(c => c.aliases && c.aliases.includes(commandName));
 
             if (cmd) {
                 console.log(chalk.blue(`[COMMAND] Executing ${prefix}${commandName} from ${sender}`));
-                
-                // Execute plugin routing parameters
                 await cmd.execute(client, msg, {
                     from,
                     isGroup,
