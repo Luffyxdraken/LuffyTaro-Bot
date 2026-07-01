@@ -70,8 +70,13 @@ async function startLuffyBot() {
         browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
-    // 🔑 Handle Pairing Setup Scenario (Only triggers if SESSION_ID isn't set or valid)
-    if (config.authType === 'pairing' && !client.authState.creds.registered) {
+    // 💾 Save session tokens when updated
+    client.ev.on('creds.update', saveCreds);
+
+    // 🔑 Handle Pairing Setup Scenario (Bypassed if credentials exist or are active)
+    const hasCredsOnDisk = fs.existsSync(path.join(config.sessionDir, 'creds.json'));
+
+    if (config.authType === 'pairing' && !client.authState.creds.registered && !hasCredsOnDisk) {
         setTimeout(async () => {
             const targetNumber = process.env.BOT_NUMBER || config.ownerNumber;
             const phoneNumber = targetNumber.replace(/[^0-9]/g, '');
@@ -91,10 +96,9 @@ async function startLuffyBot() {
                 console.error(chalk.red('Failed to request pairing code: '), err);
             }
         }, 3000);
+    } else {
+        console.log(chalk.green('💾 Active credentials or session file detected. Bypassing pairing layout.'));
     }
-
-    // 💾 Save session tokens when updated
-    client.ev.on('creds.update', saveCreds);
 
     // 📡 Handle Connection Updates (Disconnects & Reconnects)
     client.ev.on('connection.update', (update) => {
@@ -129,4 +133,34 @@ async function startLuffyBot() {
                          msg.message.videoMessage?.caption || '';
 
             const prefix = config.prefix || '.';
-            if (!body
+            const isCmd = body.startsWith(prefix);
+            if (!isCmd) return;
+
+            // Parse command and arguments
+            const args = body.trim().split(/ +/).slice(1);
+            const commandName = body.slice(prefix.length).trim().split(/ +/).shift().toLowerCase();
+
+            // Find command via name or alias array mapping
+            const cmd = commands.get(commandName) || commands.find(c => c.aliases && c.aliases.includes(commandName));
+
+            if (cmd) {
+                console.log(chalk.blue(`[COMMAND] Executing ${prefix}${commandName} from ${sender}`));
+                
+                // Execute plugin routing parameters
+                await cmd.execute(client, msg, {
+                    from,
+                    isGroup,
+                    sender,
+                    args,
+                    body,
+                    commands
+                });
+            }
+        } catch (err) {
+            console.error(chalk.red('Error in messages.upsert routing structure: '), err);
+        }
+    });
+}
+
+// Fire up the engine
+startLuffyBot();
