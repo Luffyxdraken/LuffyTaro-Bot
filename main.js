@@ -1,9 +1,8 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const { Boom } = require('@hapi/boom');
-const fs = require('fs');
-const path = require('path');
-const chalk = require('chalk');
-const pino = require('pino');
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import fs from 'fs';
+import path from 'path';
+import chalk from 'chalk';
+import pino from 'pino';
 
 const config = {
     sessionDir: './sessions',
@@ -12,6 +11,7 @@ const config = {
 };
 
 async function startBot() {
+    // Check if sessions directory exists, if not create it
     if (!fs.existsSync(config.sessionDir)) {
         fs.mkdirSync(config.sessionDir, { recursive: true });
     }
@@ -20,7 +20,7 @@ async function startBot() {
     if (process.env.SESSION_ID && !fs.existsSync(path.join(config.sessionDir, 'creds.json'))) {
         console.log(chalk.yellow('📦 SESSION_ID env se session bana raha hu...'));
         try {
-            const sessionData = Buffer.from(process.env.SESSION_ID, 'base64').toString('utf-8');
+            const sessionData = Buffer.from(process.env.SESSION_ID.trim(), 'base64').toString('utf-8');
             fs.writeFileSync(path.join(config.sessionDir, 'creds.json'), sessionData);
             console.log(chalk.green('✅ Session restore ho gaya'));
         } catch (e) {
@@ -69,6 +69,38 @@ async function startBot() {
             if (shouldReconnect) startBot();
         } else if (connection === 'open') {
             console.log(chalk.bold.green('✅ Bot connected!'));
+        }
+    });
+
+    // 💬 MESSAGE LISTENER / COMMANDS WORKING
+    client.ev.on('messages.upsert', async (msg) => {
+        try {
+            const mek = msg.messages[0];
+            if (!mek.message) return;
+            
+            // Text extract karna group ya personal chat se
+            const messageType = Object.keys(mek.message)[0];
+            const body = (messageType === 'conversation') ? mek.message.conversation : 
+                         (messageType === 'extendedTextMessage') ? mek.message.extendedTextMessage.text : 
+                         (messageType === 'imageMessage') ? mek.message.imageMessage.caption : '';
+            
+            if (!body) return;
+
+            const from = mek.key.remoteJid;
+            const isCmd = body.startsWith('.'); // Prefix filter
+            const command = isCmd ? body.slice(1).trim().split(/ +/).shift().toLowerCase() : null;
+            
+            // Simple Test Command Execution
+            if (command === 'ping') {
+                await client.sendMessage(from, { text: '🏓 Pong! LuffyTaro Bot online hai.' }, { quoted: mek });
+            }
+
+            if (command === 'hi' || command === 'hello') {
+                await client.sendMessage(from, { text: '🍖 Yo! Main hu LuffyTaro Bot. Main kaise help karu?' }, { quoted: mek });
+            }
+
+        } catch (err) {
+            console.error('Error processing message logic:', err);
         }
     });
 }
