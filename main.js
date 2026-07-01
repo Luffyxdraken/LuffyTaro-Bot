@@ -70,8 +70,9 @@ async function startBot() {
         version,
         logger: pino({ level: 'silent' }),
         auth: state,
-        printQRInTerminal: config.authType === 'qr',
-        browser: ['LuffyBot', 'Chrome', '20.0.04']
+        printQRInTerminal: false,
+        // 💻 FIX: Changed 'LuffyBot' to 'Ubuntu' to pass standard verification checks
+        browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
     await loadPlugins();
@@ -84,10 +85,7 @@ async function startBot() {
         setTimeout(async () => {
             if (client.authState.creds.registered) return;
             
-            // 🧼 DEEP CLEAN PHONE NUMBER LAYOUT
             let targetPhone = config.botNumber.replace(/[^0-9]/g, '');
-            
-            // Strip leading zero if accidentally provided with country code (e.g., 9109876...)
             if (targetPhone.startsWith('0')) {
                 targetPhone = targetPhone.substring(1);
             }
@@ -97,7 +95,7 @@ async function startBot() {
                 process.exit(1);
             }
             
-            console.log(chalk.cyan(`📡 Requesting pairing code specifically for cleaned Bot Number: ${targetPhone}`));
+            console.log(chalk.cyan(`📡 Requesting pairing code specifically for Bot Number: ${targetPhone}`));
             try {
                 const code = await client.requestPairingCode(targetPhone);
                 console.log(chalk.bold.yellow('\n🤖 PAIRING CODE: ' + code.match(/.{1,4}/g).join('-') + '\n'));
