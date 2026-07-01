@@ -48,7 +48,6 @@ async function loadPlugins() {
 }
 
 async function startBot() {
-    // Force clean directory generation with absolute permissions flags
     if (!fs.existsSync(config.sessionDir)) {
         fs.mkdirSync(config.sessionDir, { recursive: true, mode: 0o777 });
     }
@@ -84,22 +83,32 @@ async function startBot() {
     if (config.authType === 'pairing' && !isRegistered) {
         setTimeout(async () => {
             if (client.authState.creds.registered) return;
-            const targetPhone = config.botNumber.replace(/[^0-9]/g, '');
+            
+            // 🧼 DEEP CLEAN PHONE NUMBER LAYOUT
+            let targetPhone = config.botNumber.replace(/[^0-9]/g, '');
+            
+            // Strip leading zero if accidentally provided with country code (e.g., 9109876...)
+            if (targetPhone.startsWith('0')) {
+                targetPhone = targetPhone.substring(1);
+            }
             
             if (!targetPhone) {
                 console.log(chalk.red('❌ CRITICAL ERROR: BOT_NUMBER env setting is missing or empty!'));
                 process.exit(1);
             }
             
-            console.log(chalk.cyan(`📡 Requesting pairing code specifically for Bot Number: ${targetPhone}`));
-            const code = await client.requestPairingCode(targetPhone);
-            console.log(chalk.bold.yellow('\n🤖 PAIRING CODE: ' + code.match(/.{1,4}/g).join('-') + '\n'));
+            console.log(chalk.cyan(`📡 Requesting pairing code specifically for cleaned Bot Number: ${targetPhone}`));
+            try {
+                const code = await client.requestPairingCode(targetPhone);
+                console.log(chalk.bold.yellow('\n🤖 PAIRING CODE: ' + code.match(/.{1,4}/g).join('-') + '\n'));
+            } catch (pairErr) {
+                console.error(chalk.red('❌ WhatsApp registration server rejected request:'), pairErr);
+            }
         }, 3000);
     } else {
         console.log(chalk.bold.green('💾 Session mila. Pairing skip.'));
     }
 
-    // Force flush state storage safely to disk on every single key update event
     client.ev.on('creds.update', async () => {
         await saveCreds();
     });
