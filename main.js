@@ -25,7 +25,19 @@ const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 // HTTP Health checks & Keep-Alive binding
 app.get('/', (req, res) => res.status(200).json({ status: 'online', bot: config.botName }));
-app.listen(config.port, () => console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`)));
+
+const server = app.listen(config.port, () => {
+    console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`));
+});
+
+// 🛡️ Prevent EADDRINUSE crash loop
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(chalk.yellow(`⚠️ Port ${config.port} is temporarily busy. Skipping web server rebinding, but starting WhatsApp core...`));
+    } else {
+        console.error(chalk.red('❌ Server error:'), err);
+    }
+});
 
 export let client;
 const startTime = Date.now();
