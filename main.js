@@ -9,7 +9,8 @@ async function startBot() {
     console.log('🚀 Bot start ho raha hai...');
 
     // 1. Session load
-    const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
+const sessionPath = config.sessionDir || './sessions'; // 👈 fallback
+const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
     // 2. Version
     const { version } = await fetchLatestBaileysVersion();
