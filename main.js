@@ -16,16 +16,25 @@ const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     const { version } = await fetchLatestBaileysVersion();
 
     // 3. Socket banao
-    client = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: config.authType === 'qr',
-        auth: state,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0
-    });
+   const client = makeWASocket({
+    logger: pino({ level: 'silent' }),
+    auth: state,
+    printQRInTerminal: false, // 👈 QR bilkul band
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    generateHighQualityLinkPreview: true
+});
 
+// 👇 YE NAYA CODE - Pairing code wala
+if (config.authType === 'pairing' &&!client.authState.creds.registered) {
+    const phoneNumber = config.owner[0]; // owner ka number lega
+    console.log(`📞 Pairing code generate ho raha hai number: ${phoneNumber} ke liye...`);
+
+    setTimeout(async () => {
+        const code = await client.requestPairingCode(phoneNumber);
+        console.log(`\n🔑 PAIRING CODE: ${code} 🔑\n`);
+        console.log(`WhatsApp > Linked Devices > Link with phone number > Code daal de\n`);
+    }, 3000);
+}
     // 4. Creds save
     client.ev.on('creds.update', saveCreds);
 
