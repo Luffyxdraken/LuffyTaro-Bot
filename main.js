@@ -1,6 +1,6 @@
 import { useMultiFileAuthState, fetchLatestBaileysVersion, makeWASocket } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import config from './config.js';
+import * as config from './config.js'; //
 import { commands, loadPlugins } from './lib/plugins.js';
 
 let client;
