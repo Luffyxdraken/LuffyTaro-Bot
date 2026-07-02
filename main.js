@@ -45,6 +45,7 @@ const startTime = Date.now();
 async function startLuffyBot() {
     await initDatabase();
     await loadPlugins();
+console.log(chalk.green(`✅ Total ${commands.size || commands.length} commands loaded`)); // 👈 ye line add kar
 
     if (!fs.existsSync(config.sessionDir)) {
         fs.mkdirSync(config.sessionDir, { recursive: true, mode: 0o777 });
@@ -70,9 +71,13 @@ async function startLuffyBot() {
     logger: pino({ level: 'silent' }),
     printQRInTerminal: config.authType === 'qr',
     auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-    },
+        const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
+
+client = makeWASocket({
+    version,
+    logger: pino({ level: 'silent' }),
+    printQRInTerminal: config.authType === 'qr',
+    auth: state, // 👈 seedha state daal de
     browser: ['Ubuntu', 'Chrome', '20.0.04']
 });
 
