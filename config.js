@@ -14,7 +14,7 @@ export const config = {
     ownerName: process.env.OWNER_NAME || 'Luffy',
     botName: process.env.BOT_NAME || 'LuffyTaro Bot',
     authType: process.env.AUTH_TYPE || 'pairing', // 'pairing' or 'qr'
-    sessionDir: path.resolve(__dirname, process.env.SESSION_DIR || './session'),
+    sessionDir: path.resolve(__dirname, process.env.SESSION_DIR || './sessions'),
     databasePath: path.resolve(__dirname, process.env.DATABASE_PATH || './database/luffytaro.db'),
     autoRead: process.env.AUTO_READ === 'true',
     autoTyping: process.env.AUTO_TYPING === 'true',
