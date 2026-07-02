@@ -33,26 +33,59 @@ const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
     await loadPlugins();
 
     // 6. Connection event
-    client.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
+client.ev.on('connection.update', async (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-        if (qr && config.authType === 'qr') {
-            console.log('📱 QR Scan karo');
-        }
+    if (qr && config.authType === 'qr') {
+        console.log('📱 QR Scan karo');
+    }
 
-        if (connection === 'open') {
-            console.log('✅ Bot connected!');
-        }
+    if (connection === 'open') {
+        console.log('✅ Bot connected!');
 
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode!== 401;
-            console.log('❌ Connection closed:', lastDisconnect?.error?.message);
-            if (shouldReconnect) {
-                console.log('🔄 Reconnecting...');
-                startBot();
+        // 1. Bot khud ko message bhejega
+        const myJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
+
+        const menu = `🤖 *BOT ACTIVE HAI* 🤖
+
+*Owner:* ${config.owner[0]}
+*Prefix:* ${config.prefix}
+*Status:* Online ✅
+
+*Available Commands:*
+${config.prefix}hi - Bot se hello bolo 👋
+${config.prefix}ping - Latency check 🏓
+
+*Menu:*
+${config.prefix}menu - Ye menu dubara dekho
+
+Bot successfully connected ho gaya hai!`;
+
+        // Khud ko message
+        await client.sendMessage(myJid, { text: menu });
+        console.log('📤 Khud ko active message bheja');
+
+        // 2. Owner ko message bhejega
+        for (let num of config.owner) {
+            const ownerJid = num + '@s.whatsapp.net';
+            try {
+                await client.sendMessage(ownerJid, { text: `✅ *Bot Active Ho Gaya!*\n\n` + menu });
+                console.log(`📤 Owner ${num} ko message bheja`);
+            } catch (e) {
+                console.log(`Owner ${num} ko message nahi gaya:`, e.message);
             }
         }
-    });
+    }
+
+    if (connection === 'close') {
+        const shouldReconnect = lastDisconnect?.error?.output?.statusCode!== 401;
+        console.log('❌ Connection closed:', lastDisconnect?.error?.message);
+        if (shouldReconnect) {
+            console.log('🔄 Reconnecting...');
+            startBot();
+        }
+    }
+});
 
     // 7. Message handler
     client.ev.on('messages.upsert', async (m) => {
