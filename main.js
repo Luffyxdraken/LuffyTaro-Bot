@@ -99,5 +99,4 @@ async function startBot() {
         }
     });
 }
-
 startBot().catch(err => console.log('Fatal error:', err));
