@@ -1,40 +1,29 @@
 import { registerCommand } from '../lib/plugins.js';
 import axios from 'axios';
 
-// Upgraded multi-tier scraper engine mapping directly to working endpoints
+// Upgraded production-grade scraper engine
 async function fetchMediaStream(type, url, query = '') {
-    // TIER 1: BK9 API Router Cluster
+    // TIER 1: Highly stable open-mirror parameters
     try {
         if (type === 'ytsr') {
-            const res = await axios.get(`https://bk9.fun/download/ytsb?q=${encodeURIComponent(query)}`);
-            // Extracts the first video link found in the search results array
-            return res.data?.BK9?.[0]?.url || null;
+            const res = await axios.get(`https://api.shizuca.xyz/api/ytsm?search=${encodeURIComponent(query)}`);
+            return res.data?.results?.[0]?.url || res.data?.[0]?.url || null;
         }
         
         if (type === 'ytmp3') {
-            const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(url)}`);
-            return res.data?.BK9?.download || null;
+            const res = await axios.get(`https://api.shizuca.xyz/api/ytmp3?url=${encodeURIComponent(url)}`);
+            return res.data?.downloadUrl || res.data?.result?.download_url || res.data?.url || null;
         }
 
         if (type === 'ytmp4') {
-            const res = await axios.get(`https://bk9.fun/download/ytmp4?url=${encodeURIComponent(url)}`);
-            return res.data?.BK9?.download || null;
-        }
-
-        if (type === 'tiktok') {
-            const res = await axios.get(`https://bk9.fun/download/tiktok?url=${encodeURIComponent(url)}`);
-            return res.data?.BK9?.video || null;
-        }
-
-        if (type === 'instagram') {
-            const res = await axios.get(`https://bk9.fun/download/instagram?url=${encodeURIComponent(url)}`);
-            return res.data?.BK9?.[0]?.url || null;
+            const res = await axios.get(`https://api.shizuca.xyz/api/ytmp4?url=${encodeURIComponent(url)}`);
+            return res.data?.downloadUrl || res.data?.result?.download_url || res.data?.url || null;
         }
     } catch (e) {
-        console.warn(`Primary Tier-1 API dropped for ${type}, shifting to fallback matrix loops...`);
+        console.warn(`Primary Scraper Tier dropped for ${type}, shifting to backlink cluster matrix...`);
     }
 
-    // TIER 2: Secondary Global Mirror Network
+    // TIER 2: Secondary Global Routing Matrix (Gifted Mirror Engine)
     try {
         if (type === 'ytsr') {
             const res = await axios.get(`https://api.giftedtech.my.id/api/search/youtube?apikey=gifted&query=${encodeURIComponent(query)}`);
@@ -45,10 +34,11 @@ async function fetchMediaStream(type, url, query = '') {
         const res = await axios.get(`https://api.giftedtech.my.id/api/download/${fallbackType}?apikey=gifted&url=${encodeURIComponent(url)}`);
         return res.data?.result?.download_url || res.data?.result?.url || null;
     } catch (e) {
-        console.error(`CRITICAL: All fallback routes exhausted for target element class [${type}]`, e.message);
+        console.error(`CRITICAL: All fallback routes completely exhausted for type [${type}]:`, e.message);
         return null;
     }
 }
+
 
 registerCommand({
     name: 'play',
