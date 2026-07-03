@@ -1,102 +1,163 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import { fileURLToPath } from 'url';
+import path from 'path';
+import fs from 'fs';
+import express from 'express';
 import pino from 'pino';
-import * as config from './config.js';
-import { loadPlugins, commands } from './lib/plugins.js'; // 👈 commands bhi import kar
+import chalk from 'chalk';
+import readline from 'readline';
+import makeWASocket, {
+    useMultiFileAuthState,
+    DisconnectReason,
+    fetchLatestBaileysVersion,
+    makeCacheableSignalKeyStore
+} from '@whiskeysockets/baileys';
+import { Boom } from '@hapi/boom';
+import { config } from './config.js';
+import { initDatabase, getSetting } from './lib/db.js';
+import { loadPlugins, commands } from './lib/plugins.js';
 
-await loadPlugins(); // ✅ 1 baar file start hote hi
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-async function startBot() {
-    console.log('🚀 Bot start ho raha hai...');
+const app = express();
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
-    // 1. Session load - SIRF 1 BAAR
-    const sessionPath = config.sessionDir || './sessions';
-    const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
+// HTTP Health checks & Keep-Alive binding
+app.get('/', (req, res) => res.status(200).json({ status: 'online', bot: config.botName }));
+app.listen(config.port, () => console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`)));
 
-    // 2. Version
+export let client;
+const startTime = Date.now();
+
+async function startLuffyBot() {
+    await initDatabase();
+    await loadPlugins();
+
+    if (!fs.existsSync(config.sessionDir)) {
+        fs.mkdirSync(config.sessionDir, { recursive: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    // 3. Socket banao - SIRF 1 BAAR
-    const client = makeWASocket({
+    client = makeWASocket.default({
         version,
         logger: pino({ level: 'silent' }),
-        auth: state,
-        printQRInTerminal: false,
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        generateHighQualityLinkPreview: true
+        printQRInTerminal: config.authType === 'qr',
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
+        },
+        browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
-    // 4. Creds save
-    client.ev.on('creds.update', saveCreds);
-
-    // 5. Pairing code wala code
-    if (config.authType === 'pairing' &&!client.authState.creds.registered) {
-        const phoneNumber = config.owner[0];
-        console.log(`📞 Pairing code generate ho raha hai number: ${phoneNumber} ke liye...`);
+    // Handle Pairing Setup Scenario
+    if (config.authType === 'pairing' && !client.authState.creds.registered) {
         setTimeout(async () => {
-            const code = await client.requestPairingCode(phoneNumber);
-            console.log(`\n🔑 PAIRING CODE: ${code} 🔑\n`);
-            console.log(`WhatsApp > Linked Devices > Link with phone number > Code daal de\n`);
+            const phoneNumber = config.ownerNumber.replace(/[^0-9]/g, '');
+            if (!phoneNumber) {
+                console.log(chalk.red('❌ OWNER_NUMBER must be populated in environment setup for pairing connection!'));
+                process.exit(1);
+            }
+            try {
+                const code = await client.requestPairingCode(phoneNumber);
+                console.log(chalk.bold.yellow('\n🤖 ---------------- LUFFYTARO PAIRING ENGINE ---------------- 🤖'));
+                console.log(chalk.bold.white(`     Use the code below to pair your bot within WhatsApp App:`));
+                console.log(chalk.bold.cyan(`\n                     👉   ${code}   👈\n`));
+                console.log(chalk.bold.yellow('-------------------------------------------------------------\n'));
+            } catch (err) {
+                console.error(chalk.red('Failed to request pairing code: '), err);
+            }
         }, 3000);
     }
 
-    // 6. Connection event
+    client.ev.on('creds.update', saveCreds);
+
     client.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect } = update;
-
-        if (connection === 'open') {
-            console.log('✅ Bot connected!');
-
-            const myJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
-            const menu = `🤖 *BOT ACTIVE HAI* 🤖\n\n*Owner:* ${config.owner[0]}\n*Prefix:* ${config.prefix}\n*Status:* Online ✅\n\n*Commands:*\n${config.prefix}hi\n${config.prefix}ping\n${config.prefix}menu`;
-
-            await client.sendMessage(myJid, { text: menu });
-            console.log('📤 Khud ko active message bheja');
-
-            for (let num of config.owner) {
-                const ownerJid = num + '@s.whatsapp.net';
-                try {
-                    await client.sendMessage(ownerJid, { text: `✅ *Bot Active Ho Gaya!*\n\n` + menu });
-                    console.log(`📤 Owner ${num} ko message bheja`);
-                } catch (e) {
-                    console.log(`Owner ${num} ko message nahi gaya:`, e.message);
-                }
-            }
+        const { connection, lastDisconnect, qr } = update;
+        
+        if (qr && config.authType === 'qr') {
+            console.log(chalk.yellow('📸 Scan the QR code displayed above to establish initialization.'));
         }
 
         if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode!== DisconnectReason.loggedOut;
-            console.log('❌ Connection closed:', lastDisconnect?.error?.output?.statusCode);
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
+                ? lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut 
+                : true;
+            
+            console.log(chalk.red(`⚠️ Connection severed due to: ${lastDisconnect?.error}. Reconnecting context: ${shouldReconnect}`));
+            
             if (shouldReconnect) {
-                console.log('🔄 Reconnecting...');
-                startBot();
+                startLuffyBot();
+            } else {
+                console.log(chalk.bold.red('❌ Device Session permanently logged out. Clear local session path and restart.'));
+                process.exit(1);
             }
+        } else if (connection === 'open') {
+            console.log(chalk.bold.green(`\n✅ ${config.botName} operational on multi-device handshake interface!`));
+            console.log(chalk.cyan(`👑 Master: ${config.ownerName} [${config.ownerNumber}]`));
         }
     });
 
-    // 7. Message handler
-    client.ev.on('messages.upsert', async (m) => {
+    client.ev.on('messages.upsert', async (chatUpdate) => {
         try {
-            const msg = m.messages[0];
-            if (!msg.message || msg.key.fromMe) return;
+            const msg = chatUpdate.messages[0];
+            if (!msg.message) return;
+            if (msg.key && msg.key.remoteJid === 'status@broadcast') return;
 
             const from = msg.key.remoteJid;
-            const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+            const isGroup = from.endsWith('@g.us');
+            
+            // Text Extraction Parsing Block
+            let body = '';
+            if (msg.message.conversation) body = msg.message.conversation;
+            else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
+            else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
+            else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
+            
+            const sender = isGroup ? msg.key.participant : from;
+            const isOwner = sender.replace(/[^0-9]/g, '') === config.ownerNumber.replace(/[^0-9]/g, '');
+            const currentMode = await getSetting('mode') || 'public';
+            
+            if (currentMode === 'private' && !isOwner) return;
 
-            if (!text.startsWith(config.prefix)) return;
+            // Trigger presence behaviors dynamically
+            if (config.autoRead) await client.readMessages([msg.key]);
+            if (config.autoTyping) await client.sendPresenceUpdate('composing', from);
+            if (config.autoRecording) await client.sendPresenceUpdate('recording', from);
 
-            const args = text.slice(config.prefix.length).trim().split(/ +/);
-            const cmdName = args.shift().toLowerCase();
+            const isCmd = body.startsWith(config.prefix);
+            if (!isCmd) return;
 
-            const command = commands.find(c =>
-                c.name === cmdName || (c.aliases && c.aliases.includes(cmdName))
-            );
-
-            if (command) {
-                await command.execute({ client, msg, from, args, prefix: config.prefix });
+            const args = body.slice(config.prefix.length).trim().split(/ +/);
+            const commandName = args.shift().toLowerCase();
+            
+            const matchedCmd = commands.find(cmd => cmd.name === commandName || (cmd.aliases && cmd.aliases.includes(commandName)));
+            
+            if (matchedCmd) {
+                if (matchedCmd.category === 'owner' && !isOwner) {
+                    return await client.sendMessage(from, { text: '❌ This access sequence is restricted exclusively to the Bot Overlord.' }, { quoted: msg });
+                }
+                
+                const context = {
+                    client,
+                    msg,
+                    from,
+                    isGroup,
+                    sender,
+                    args,
+                    isOwner,
+                    body,
+                    startTime
+                };
+                
+                await matchedCmd.execute(context);
             }
-        } catch (e) {
-            console.log('Error:', e.message);
+        } catch (err) {
+            console.error(chalk.red('Critical failure inside routing engine loop: '), err);
         }
     });
 }
-startBot().catch(err => console.log('Fatal error:', err));
+
+startLuffyBot();
