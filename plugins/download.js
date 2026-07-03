@@ -2,39 +2,59 @@ import { registerCommand } from '../lib/plugins.js';
 import axios from 'axios';
 
 // Upgraded production-grade scraper engine
+import { registerCommand } from '../lib/plugins.js';
+import axios from 'axios';
+
+// Upgraded production-grade scraper engine utilizing alternative clean routes
 async function fetchMediaStream(type, url, query = '') {
-    // TIER 1: Highly stable open-mirror parameters
+    // TIER 1: Maher-Zubair Main Edge Cluster
     try {
         if (type === 'ytsr') {
-            const res = await axios.get(`https://api.shizuca.xyz/api/ytsm?search=${encodeURIComponent(query)}`);
-            return res.data?.results?.[0]?.url || res.data?.[0]?.url || null;
+            const res = await axios.get(`https://api.maher-zubair.tech/search/ytsearch?q=${encodeURIComponent(query)}`);
+            return res.data?.result?.[0]?.url || null;
         }
         
         if (type === 'ytmp3') {
-            const res = await axios.get(`https://api.shizuca.xyz/api/ytmp3?url=${encodeURIComponent(url)}`);
-            return res.data?.downloadUrl || res.data?.result?.download_url || res.data?.url || null;
+            const res = await axios.get(`https://api.maher-zubair.tech/download/ytmp3?url=${encodeURIComponent(url)}`);
+            return res.data?.result?.links?.[0]?.link || res.data?.result?.download_url || null;
         }
 
         if (type === 'ytmp4') {
-            const res = await axios.get(`https://api.shizuca.xyz/api/ytmp4?url=${encodeURIComponent(url)}`);
-            return res.data?.downloadUrl || res.data?.result?.download_url || res.data?.url || null;
+            const res = await axios.get(`https://api.maher-zubair.tech/download/ytmp4?url=${encodeURIComponent(url)}`);
+            return res.data?.result?.links?.[0]?.link || res.data?.result?.download_url || null;
+        }
+
+        if (type === 'tiktok') {
+            const res = await axios.get(`https://api.maher-zubair.tech/download/tiktok?url=${encodeURIComponent(url)}`);
+            return res.data?.result?.video || null;
+        }
+
+        if (type === 'instagram') {
+            const res = await axios.get(`https://api.maher-zubair.tech/download/instagram?url=${encodeURIComponent(url)}`);
+            return res.data?.result?.[0]?.url || null;
         }
     } catch (e) {
-        console.warn(`Primary Scraper Tier dropped for ${type}, shifting to backlink cluster matrix...`);
+        console.warn(`Primary edge cluster dropped for ${type}, routing through secondary array...`);
     }
 
-    // TIER 2: Secondary Global Routing Matrix (Gifted Mirror Engine)
+    // TIER 2: Itzpire Bypass Router
     try {
         if (type === 'ytsr') {
-            const res = await axios.get(`https://api.giftedtech.my.id/api/search/youtube?apikey=gifted&query=${encodeURIComponent(query)}`);
-            return res.data?.results?.[0]?.url || null;
+            const res = await axios.get(`https://itzpire.com/search/youtube?query=${encodeURIComponent(query)}`);
+            return res.data?.data?.[0]?.url || null;
         }
 
-        const fallbackType = type === 'ytmp3' ? 'ytaudio' : type === 'ytmp4' ? 'ytvideo' : type;
-        const res = await axios.get(`https://api.giftedtech.my.id/api/download/${fallbackType}?apikey=gifted&url=${encodeURIComponent(url)}`);
-        return res.data?.result?.download_url || res.data?.result?.url || null;
+        if (type === 'ytmp3') {
+            const res = await axios.get(`https://itzpire.com/download/play-youtube?query=${encodeURIComponent(url)}`);
+            return res.data?.data?.audio || null;
+        }
+
+        if (type === 'ytmp4') {
+            const res = await axios.get(`https://itzpire.com/download/play-youtube?query=${encodeURIComponent(url)}`);
+            return res.data?.data?.video || null;
+        }
     } catch (e) {
-        console.error(`CRITICAL: All fallback routes completely exhausted for type [${type}]:`, e.message);
+        console.error(`CRITICAL: All fallback routes exhausted for target element class [${type}]:`, e.message);
         return null;
     }
 }
