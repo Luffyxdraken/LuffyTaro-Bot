@@ -17,19 +17,19 @@ function extractTargetJid(msg, args) {
 }
 
 // UPGRADED: Robust admin check that handles multi-device identifier strings seamlessly
+// UPGRADED: Absolute digit matching that cleanly bypasses s.whatsapp.net vs lid formatting differences
 async function checkBotAdminStatus(client, from) {
     try {
         const groupMetadata = await client.groupMetadata(from);
         
-        // Extract the absolute clean phone number prefix of the bot
+        // Extract the absolute clean phone number of the bot (numbers only)
         const rawBotId = client.user.id || client.user.jid;
-        const cleanBotNumber = rawBotId.split('@')[0].split(':')[0]; 
-        const normalizedBotJid = `${cleanBotNumber}@s.whatsapp.net`;
+        const cleanBotNumber = rawBotId.replace(/[^0-9]/g, '');
 
-        // Check if any admin entry's ID matches our normalized bot JID
+        // Match against any participant entry by clearing their formatting down to pure numbers too
         const botUser = groupMetadata.participants.find(p => {
-            const cleanParticipantId = p.id.split('@')[0].split(':')[0] + '@s.whatsapp.net';
-            return cleanParticipantId === normalizedBotJid;
+            const cleanParticipantId = p.id.replace(/[^0-9]/g, '');
+            return cleanParticipantId === cleanBotNumber;
         });
 
         return botUser?.admin === 'admin' || botUser?.admin === 'superadmin';
@@ -38,6 +38,7 @@ async function checkBotAdminStatus(client, from) {
         return false;
     }
 }
+
 
 registerCommand({
     name: 'tagall',
