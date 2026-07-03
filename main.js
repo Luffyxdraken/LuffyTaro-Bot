@@ -25,7 +25,19 @@ const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 // HTTP Health checks & Keep-Alive binding
 app.get('/', (req, res) => res.status(200).json({ status: 'online', bot: config.botName }));
-app.listen(config.port, () => console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`)));
+
+const server = app.listen(config.port, () => {
+    console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`));
+});
+
+// 🛡️ Safe guard to prevent port collision crashes
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.log(chalk.yellow(`⚠️ Port ${config.port} is busy. Continuing session connection...`));
+    } else {
+        console.error(chalk.red('❌ Web Server Error:'), err);
+    }
+});
 
 export let client;
 const startTime = Date.now();
@@ -38,10 +50,25 @@ async function startLuffyBot() {
         fs.mkdirSync(config.sessionDir, { recursive: true });
     }
 
+    // 🔐 DECODE SESSION ID ENV STRING TO FILE
+    const credsPath = path.join(config.sessionDir, 'creds.json');
+    if (process.env.SESSION_ID && !fs.existsSync(credsPath)) {
+        console.log(chalk.yellow('📦 SESSION_ID environment string parsing...'));
+        try {
+            const cleanedSession = process.env.SESSION_ID.replace(/LuffyTaro;;/g, '').trim();
+            const sessionData = Buffer.from(cleanedSession, 'base64').toString('utf-8');
+            fs.writeFileSync(credsPath, sessionData);
+            console.log(chalk.bold.green('✅ Session restored successfully via credentials string!'));
+        } catch (e) {
+            console.log(chalk.red('❌ SESSION_ID decoding failure. Is your variable string intact?'));
+        }
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    client = makeWASocket.default({
+    // 💻 FIX: Removed .default invocation syntax
+    client = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: config.authType === 'qr',
@@ -52,8 +79,8 @@ async function startLuffyBot() {
         browser: ['Ubuntu', 'Chrome', '20.0.04']
     });
 
-    // Handle Pairing Setup Scenario
-    if (config.authType === 'pairing' && !client.authState.creds.registered) {
+    // Handle Pairing Setup Scenario (Skipped if creds are active)
+    if (config.authType === 'pairing' && !client.authState.creds.registered && !fs.existsSync(credsPath)) {
         setTimeout(async () => {
             const phoneNumber = config.ownerNumber.replace(/[^0-9]/g, '');
             if (!phoneNumber) {
@@ -77,7 +104,7 @@ async function startLuffyBot() {
     client.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        if (qr && config.authType === 'qr') {
+        if (qr && config.authType === 'qr' && !fs.existsSync(credsPath)) {
             console.log(chalk.yellow('📸 Scan the QR code displayed above to establish initialization.'));
         }
 
@@ -122,7 +149,6 @@ async function startLuffyBot() {
             
             if (currentMode === 'private' && !isOwner) return;
 
-            // Trigger presence behaviors dynamically
             if (config.autoRead) await client.readMessages([msg.key]);
             if (config.autoTyping) await client.sendPresenceUpdate('composing', from);
             if (config.autoRecording) await client.sendPresenceUpdate('recording', from);
