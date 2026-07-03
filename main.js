@@ -145,9 +145,11 @@ async function startLuffyBot() {
             else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
             else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
             else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
-            
-            const sender = isGroup ? msg.key.participant : from;
-            const isOwner = sender.replace(/[^0-9]/g, '') === config.ownerNumber.replace(/[^0-9]/g, '');
+
+                        // Old line: const sender = isGroup ? msg.key.participant : from;
+            // Updated Safe Target Check:
+            const sender = (isGroup ? msg.key.participant : from) || '';
+            const isOwner = sender.replace(/[^0-9]/g, '') === (config.ownerNumber || '').replace(/[^0-9]/g, '');
             const currentMode = await getSetting('mode') || 'public';
             
             if (currentMode === 'private' && !isOwner) return;
