@@ -67,7 +67,7 @@ async function startLuffyBot() {
     const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
     const { version } = await fetchLatestBaileysVersion();
 
-    // 💻 FIX: Removed .default invocation syntax
+    // 💻 UPGRADED: Added connection timeout safety configs for server drops
     client = makeWASocket({
         version,
         logger: pino({ level: 'silent' }),
@@ -76,7 +76,10 @@ async function startLuffyBot() {
             creds: state.creds,
             keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
         },
-        browser: ['Ubuntu', 'Chrome', '20.0.04']
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        connectTimeoutMs: 60000,       // Wait up to 60 seconds for handshake response
+        defaultQueryTimeoutMs: 0,      // Disable quick queries timeout to prevent connection drop cycles
+        keepAliveIntervalMs: 30000     // Keep websocket active via background heartbeats
     });
 
     // Handle Pairing Setup Scenario (Skipped if creds are active)
