@@ -1,6 +1,39 @@
 import { registerCommand } from '../lib/plugins.js';
 import axios from 'axios';
 
+// A resilient helper function that attempts multiple free download servers
+async function fetchMediaStream(type, url, query = '') {
+    // 1. Primary endpoint cluster configs
+    try {
+        if (type === 'ytsr') {
+            const res = await axios.get(`https://api.vkrdown.com/api/ytsr?q=${encodeURIComponent(query)}`);
+            return res.data?.data?.[0]?.url || res.data?.results?.[0]?.url || null;
+        }
+        
+        const res = await axios.get(`https://api.vkrdown.com/api/${type}?url=${encodeURIComponent(url)}`);
+        const targetUrl = res.data?.data?.url || res.data?.download?.url || res.data?.data?.video;
+        if (targetUrl) return targetUrl;
+    } catch (e) {
+        console.warn(`Primary API tier error for ${type}, shifting to fallback pipelines...`);
+    }
+
+    // 2. Fallback secondary endpoint cluster configs (Dreaded Public Engine API)
+    try {
+        if (type === 'ytsr') {
+            const fallbackSearch = await axios.get(`https://api.dreaded.site/api/ytsr?query=${encodeURIComponent(query)}`);
+            return fallbackSearch.data?.result?.[0]?.url || null;
+        }
+        
+        // Adjust standard name properties to match target fallback routers
+        const routerName = type === 'ytmp3' ? 'ytaudio' : type === 'ytmp4' ? 'ytvideo' : type;
+        const res = await axios.get(`https://api.dreaded.site/api/${routerName}?url=${encodeURIComponent(url)}`);
+        return res.data?.result?.downloadUrl || res.data?.result?.url || null;
+    } catch (e) {
+        console.error('All media stream extraction channels failed.', e);
+        return null;
+    }
+}
+
 registerCommand({
     name: 'play',
     aliases: ['song'],
@@ -10,19 +43,16 @@ registerCommand({
         const query = args.join(' ');
         if (!query) return await client.sendMessage(from, { text: '⚠️ Please supply a song name or search query.' });
         
-        await client.sendMessage(from, { text: `🔍 Searching and downloading \`${query}\` from streaming services...` });
+        await client.sendMessage(from, { text: `🔍 Searching and resolving stream files for: \`${query}\`...` });
         
         try {
-            // Live Search Query Integration via a functional aggregate API endpoint
-            const res = await axios.get(`https://api.vkrdown.com/api/ytsr?q=${encodeURIComponent(query)}`);
-            const videoUrl = res.data?.data?.[0]?.url || res.data?.results?.[0]?.url;
-            
-            if (!videoUrl) throw new Error('No audio tracking assets mapped.');
+            // Locate the YouTube URL
+            const videoUrl = await fetchMediaStream('ytsr', null, query);
+            if (!videoUrl) throw new Error('No search tracks mapped.');
 
-            const dlRes = await axios.get(`https://api.vkrdown.com/api/ytmp3?url=${encodeURIComponent(videoUrl)}`);
-            const audioUrl = dlRes.data?.data?.url || dlRes.data?.download?.url;
-
-            if (!audioUrl) throw new Error('Resource streaming link resolution failed.');
+            // Fetch the high quality audio stream
+            const audioUrl = await fetchMediaStream('ytmp3', videoUrl);
+            if (!audioUrl) throw new Error('Audio conversion failed.');
 
             await client.sendMessage(from, { 
                 audio: { url: audioUrl }, 
@@ -30,8 +60,7 @@ registerCommand({
                 ptt: false 
             }, { quoted: msg });
         } catch (e) {
-            console.error(e);
-            await client.sendMessage(from, { text: '❌ Failed to fetch audio stream. Please try a different title.' });
+            await client.sendMessage(from, { text: '❌ All streaming engines failed to fetch this audio stream. Please try a different song title.' }, { quoted: msg });
         }
     }
 });
@@ -43,14 +72,11 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Please supply a valid YouTube link.' });
         await client.sendMessage(from, { text: '📥 Resolving YouTube audio content stream vectors...' });
-        try {
-            const dlRes = await axios.get(`https://api.vkrdown.com/api/ytmp3?url=${encodeURIComponent(args[0])}`);
-            const audioUrl = dlRes.data?.data?.url || dlRes.data?.download?.url;
-            if (!audioUrl) throw new Error();
-            await client.sendMessage(from, { audio: { url: audioUrl }, mimetype: 'audio/mp4' }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Unable to extract audio from link.' }, { quoted: msg });
-        }
+        
+        const audioUrl = await fetchMediaStream('ytmp3', args[0]);
+        if (!audioUrl) return await client.sendMessage(from, { text: '❌ Unable to extract audio from link using current system configurations.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { audio: { url: audioUrl }, mimetype: 'audio/mp4' }, { quoted: msg });
     }
 });
 
@@ -61,14 +87,11 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Please supply a valid YouTube link.' });
         await client.sendMessage(from, { text: '📥 Processing high definition video format allocation tracks...' });
-        try {
-            const dlRes = await axios.get(`https://api.vkrdown.com/api/ytmp4?url=${encodeURIComponent(args[0])}`);
-            const videoUrl = dlRes.data?.data?.url || dlRes.data?.download?.url;
-            if (!videoUrl) throw new Error();
-            await client.sendMessage(from, { video: { url: videoUrl }, caption: '✅ Download complete!' }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Video download stream resolution failed.' }, { quoted: msg });
-        }
+        
+        const videoUrl = await fetchMediaStream('ytmp4', args[0]);
+        if (!videoUrl) return await client.sendMessage(from, { text: '❌ Video download stream resolution failed.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { video: { url: videoUrl }, caption: '✅ Download complete!' }, { quoted: msg });
     }
 });
 
@@ -80,14 +103,11 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Link required.' });
         await client.sendMessage(from, { text: '📥 Resolving remote Facebook video objects...' });
-        try {
-            const res = await axios.get(`https://api.vkrdown.com/api/facebook?url=${encodeURIComponent(args[0])}`);
-            const videoUrl = res.data?.data?.url || res.data?.download?.url;
-            if (!videoUrl) throw new Error();
-            await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Could not retrieve Facebook asset media elements.' }, { quoted: msg });
-        }
+        
+        const videoUrl = await fetchMediaStream('facebook', args[0]);
+        if (!videoUrl) return await client.sendMessage(from, { text: '❌ Could not retrieve Facebook asset media elements.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
     }
 });
 
@@ -99,14 +119,11 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Provide a valid Instagram URL.' });
         await client.sendMessage(from, { text: '📥 Pulling Instagram CDN edge cache paths...' });
-        try {
-            const res = await axios.get(`https://api.vkrdown.com/api/instagram?url=${encodeURIComponent(args[0])}`);
-            const videoUrl = res.data?.data?.url || res.data?.download?.url;
-            if (!videoUrl) throw new Error();
-            await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Failed to parse media parameters from Instagram link.' }, { quoted: msg });
-        }
+        
+        const videoUrl = await fetchMediaStream('instagram', args[0]);
+        if (!videoUrl) return await client.sendMessage(from, { text: '❌ Failed to parse media parameters from Instagram link.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
     }
 });
 
@@ -117,14 +134,11 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Provide an active TikTok video link link.' });
         await client.sendMessage(from, { text: '📥 Processing TikTok CDN content distribution streams...' });
-        try {
-            const res = await axios.get(`https://api.vkrdown.com/api/tiktok?url=${encodeURIComponent(args[0])}`);
-            const videoUrl = res.data?.data?.video || res.data?.download?.url;
-            if (!videoUrl) throw new Error();
-            await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Failed to extract watermark-free asset stream.' }, { quoted: msg });
-        }
+        
+        const videoUrl = await fetchMediaStream('tiktok', args[0]);
+        if (!videoUrl) return await client.sendMessage(from, { text: '❌ Failed to extract watermark-free asset stream.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
     }
 });
 
@@ -135,14 +149,11 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Target tracking requires an explicit Spotify track link.' });
         await client.sendMessage(from, { text: '📥 Resolving track encoding layers from Spotify registries...' });
-        try {
-            const res = await axios.get(`https://api.vkrdown.com/api/spotify?url=${encodeURIComponent(args[0])}`);
-            const audioUrl = res.data?.data?.url || res.data?.download?.url;
-            if (!audioUrl) throw new Error();
-            await client.sendMessage(from, { audio: { url: audioUrl }, mimetype: 'audio/mp4' }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Spotify track compilation failed.' }, { quoted: msg });
-        }
+        
+        const audioUrl = await fetchMediaStream('spotify', args[0]);
+        if (!audioUrl) return await client.sendMessage(from, { text: '❌ Spotify track compilation failed.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { audio: { url: audioUrl }, mimetype: 'audio/mp4' }, { quoted: msg });
     }
 });
 
@@ -153,14 +164,10 @@ registerCommand({
     execute: async ({ client, from, msg, args }) => {
         if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Target file configuration link is missing.' });
         await client.sendMessage(from, { text: '📥 Mirroring direct package allocation tracks from Mediafire...' });
-        try {
-            const res = await axios.get(`https://api.vkrdown.com/api/mediafire?url=${encodeURIComponent(args[0])}`);
-            const docUrl = res.data?.data?.url || res.data?.download?.url;
-            const name = res.data?.data?.filename || 'Mediafire_Download';
-            if (!docUrl) throw new Error();
-            await client.sendMessage(from, { document: { url: docUrl }, fileName: name, mimetype: 'application/octet-stream' }, { quoted: msg });
-        } catch {
-            await client.sendMessage(from, { text: '❌ Direct link parsing block encountered an error.' }, { quoted: msg });
-        }
+        
+        const docUrl = await fetchMediaStream('mediafire', args[0]);
+        if (!docUrl) return await client.sendMessage(from, { text: '❌ Direct link parsing block encountered an error.' }, { quoted: msg });
+        
+        await client.sendMessage(from, { document: { url: docUrl }, fileName: 'Mediafire_Download.zip', mimetype: 'application/octet-stream' }, { quoted: msg });
     }
 });
