@@ -1,35 +1,51 @@
 import { registerCommand } from '../lib/plugins.js';
 import axios from 'axios';
 
-// A resilient helper function that attempts multiple free download servers
+// Upgraded multi-tier scraper engine mapping directly to working endpoints
 async function fetchMediaStream(type, url, query = '') {
-    // 1. Primary endpoint cluster configs
+    // TIER 1: BK9 API Router Cluster
     try {
         if (type === 'ytsr') {
-            const res = await axios.get(`https://api.vkrdown.com/api/ytsr?q=${encodeURIComponent(query)}`);
-            return res.data?.data?.[0]?.url || res.data?.results?.[0]?.url || null;
+            const res = await axios.get(`https://bk9.fun/download/ytsb?q=${encodeURIComponent(query)}`);
+            // Extracts the first video link found in the search results array
+            return res.data?.BK9?.[0]?.url || null;
         }
         
-        const res = await axios.get(`https://api.vkrdown.com/api/${type}?url=${encodeURIComponent(url)}`);
-        const targetUrl = res.data?.data?.url || res.data?.download?.url || res.data?.data?.video;
-        if (targetUrl) return targetUrl;
+        if (type === 'ytmp3') {
+            const res = await axios.get(`https://bk9.fun/download/ytmp3?url=${encodeURIComponent(url)}`);
+            return res.data?.BK9?.download || null;
+        }
+
+        if (type === 'ytmp4') {
+            const res = await axios.get(`https://bk9.fun/download/ytmp4?url=${encodeURIComponent(url)}`);
+            return res.data?.BK9?.download || null;
+        }
+
+        if (type === 'tiktok') {
+            const res = await axios.get(`https://bk9.fun/download/tiktok?url=${encodeURIComponent(url)}`);
+            return res.data?.BK9?.video || null;
+        }
+
+        if (type === 'instagram') {
+            const res = await axios.get(`https://bk9.fun/download/instagram?url=${encodeURIComponent(url)}`);
+            return res.data?.BK9?.[0]?.url || null;
+        }
     } catch (e) {
-        console.warn(`Primary API tier error for ${type}, shifting to fallback pipelines...`);
+        console.warn(`Primary Tier-1 API dropped for ${type}, shifting to fallback matrix loops...`);
     }
 
-    // 2. Fallback secondary endpoint cluster configs (Dreaded Public Engine API)
+    // TIER 2: Secondary Global Mirror Network
     try {
         if (type === 'ytsr') {
-            const fallbackSearch = await axios.get(`https://api.dreaded.site/api/ytsr?query=${encodeURIComponent(query)}`);
-            return fallbackSearch.data?.result?.[0]?.url || null;
+            const res = await axios.get(`https://api.giftedtech.my.id/api/search/youtube?apikey=gifted&query=${encodeURIComponent(query)}`);
+            return res.data?.results?.[0]?.url || null;
         }
-        
-        // Adjust standard name properties to match target fallback routers
-        const routerName = type === 'ytmp3' ? 'ytaudio' : type === 'ytmp4' ? 'ytvideo' : type;
-        const res = await axios.get(`https://api.dreaded.site/api/${routerName}?url=${encodeURIComponent(url)}`);
-        return res.data?.result?.downloadUrl || res.data?.result?.url || null;
+
+        const fallbackType = type === 'ytmp3' ? 'ytaudio' : type === 'ytmp4' ? 'ytvideo' : type;
+        const res = await axios.get(`https://api.giftedtech.my.id/api/download/${fallbackType}?apikey=gifted&url=${encodeURIComponent(url)}`);
+        return res.data?.result?.download_url || res.data?.result?.url || null;
     } catch (e) {
-        console.error('All media stream extraction channels failed.', e);
+        console.error(`CRITICAL: All fallback routes exhausted for target element class [${type}]`, e.message);
         return null;
     }
 }
@@ -132,42 +148,12 @@ registerCommand({
     category: 'download',
     description: 'Scrapes media metadata and video assets without watermarks.',
     execute: async ({ client, from, msg, args }) => {
-        if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Provide an active TikTok video link link.' });
+        if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Provide an active TikTok video link.' });
         await client.sendMessage(from, { text: '📥 Processing TikTok CDN content distribution streams...' });
         
         const videoUrl = await fetchMediaStream('tiktok', args[0]);
         if (!videoUrl) return await client.sendMessage(from, { text: '❌ Failed to extract watermark-free asset stream.' }, { quoted: msg });
         
         await client.sendMessage(from, { video: { url: videoUrl } }, { quoted: msg });
-    }
-});
-
-registerCommand({
-    name: 'spotify',
-    category: 'download',
-    description: 'Decrypts and downloads streaming metadata arrays.',
-    execute: async ({ client, from, msg, args }) => {
-        if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Target tracking requires an explicit Spotify track link.' });
-        await client.sendMessage(from, { text: '📥 Resolving track encoding layers from Spotify registries...' });
-        
-        const audioUrl = await fetchMediaStream('spotify', args[0]);
-        if (!audioUrl) return await client.sendMessage(from, { text: '❌ Spotify track compilation failed.' }, { quoted: msg });
-        
-        await client.sendMessage(from, { audio: { url: audioUrl }, mimetype: 'audio/mp4' }, { quoted: msg });
-    }
-});
-
-registerCommand({
-    name: 'mediafire',
-    category: 'download',
-    description: 'Mediafire storage cloud mirror handler tracking algorithm.',
-    execute: async ({ client, from, msg, args }) => {
-        if (!args[0]) return await client.sendMessage(from, { text: '⚠️ Target file configuration link is missing.' });
-        await client.sendMessage(from, { text: '📥 Mirroring direct package allocation tracks from Mediafire...' });
-        
-        const docUrl = await fetchMediaStream('mediafire', args[0]);
-        if (!docUrl) return await client.sendMessage(from, { text: '❌ Direct link parsing block encountered an error.' }, { quoted: msg });
-        
-        await client.sendMessage(from, { document: { url: docUrl }, fileName: 'Mediafire_Download.zip', mimetype: 'application/octet-stream' }, { quoted: msg });
     }
 });
