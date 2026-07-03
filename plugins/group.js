@@ -1,5 +1,6 @@
 import { registerCommand } from '../lib/plugins.js';
 import { updateGroupSetting, getGroupSetting, addWarn, resetWarns } from '../lib/db.js';
+import { jidDecode } from '@whiskeysockets/baileys';
 
 // Helper function to extract a target JID from mentions, replies, or raw text arguments
 function extractTargetJid(msg, args) {
@@ -16,11 +17,7 @@ function extractTargetJid(msg, args) {
     return target;
 }
 
-// UPGRADED: Robust admin check that handles multi-device identifier strings seamlessly
-// UPGRADED: Absolute digit matching that cleanly bypasses s.whatsapp.net vs lid formatting differences
-import { jidDecode } from '@whiskeysockets/baileys';
-import { jidDecode } from '@whiskeysockets/baileys';
-
+// Robust admin check that handles multi-device identifier strings seamlessly
 async function checkBotAdminStatus(client, from) {
     try {
         const groupMetadata = await client.groupMetadata(from);
@@ -47,6 +44,9 @@ async function checkBotAdminStatus(client, from) {
     }
 }
 
+// -------------------------------------------------------------
+// REGISTERED COMMAND MATRIX
+// -------------------------------------------------------------
 
 registerCommand({
     name: 'tagall',
@@ -115,10 +115,13 @@ registerCommand({
         if (!target) return await client.sendMessage(from, { text: '⚠️ Supply targeted member notation reference by tagging them or replying.' }, { quoted: msg });
 
         const rawBotId = client.user.id || client.user.jid;
-        const cleanBotNumber = rawBotId.split('@')[0].split(':')[0]; 
-        const botJid = `${cleanBotNumber}@s.whatsapp.net`;
+        const decodedBot = jidDecode(rawBotId);
+        const botUserNumber = decodedBot ? decodedBot.user : rawBotId.split(':')[0].split('@')[0];
         
-        if (target === botJid) return await client.sendMessage(from, { text: '🤖 I cannot extract myself from this operational runtime.' }, { quoted: msg });
+        const decodedTarget = jidDecode(target);
+        const targetNumber = decodedTarget ? decodedTarget.user : target.split(':')[0].split('@')[0];
+
+        if (targetNumber === botUserNumber) return await client.sendMessage(from, { text: '🤖 I cannot extract myself from this operational runtime.' }, { quoted: msg });
 
         try {
             await client.groupParticipantsUpdate(from, [target], 'remove');
