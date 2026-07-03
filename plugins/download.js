@@ -1,10 +1,6 @@
 import { registerCommand } from '../lib/plugins.js';
 import axios from 'axios';
 
-// Upgraded production-grade scraper engine
-import { registerCommand } from '../lib/plugins.js';
-import axios from 'axios';
-
 // Upgraded production-grade scraper engine utilizing alternative clean routes
 async function fetchMediaStream(type, url, query = '') {
     // TIER 1: Maher-Zubair Main Edge Cluster
@@ -59,6 +55,9 @@ async function fetchMediaStream(type, url, query = '') {
     }
 }
 
+// -------------------------------------------------------------
+// MUSIC & VIDEO COMMANDS
+// -------------------------------------------------------------
 
 registerCommand({
     name: 'play',
