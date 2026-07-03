@@ -18,20 +18,28 @@ function extractTargetJid(msg, args) {
 
 // UPGRADED: Robust admin check that handles multi-device identifier strings seamlessly
 // UPGRADED: Absolute digit matching that cleanly bypasses s.whatsapp.net vs lid formatting differences
+import { jidDecode } from '@whiskeysockets/baileys';
+import { jidDecode } from '@whiskeysockets/baileys';
+
 async function checkBotAdminStatus(client, from) {
     try {
         const groupMetadata = await client.groupMetadata(from);
         
-        // Extract the absolute clean phone number of the bot (numbers only)
-        const rawBotId = client.user.id || client.user.jid;
-        const cleanBotNumber = rawBotId.replace(/[^0-9]/g, '');
+        // 1. Extract the raw bot ID string safely
+        const rawBotId = client.user.id || client.user.jid || '';
+        
+        // 2. Decode the JID properly to get the clean user phone number (e.g., "91XXXXXXXXXX")
+        const decodedBot = jidDecode(rawBotId);
+        const botUserNumber = decodedBot ? decodedBot.user : rawBotId.split(':')[0].split('@')[0];
 
-        // Match against any participant entry by clearing their formatting down to pure numbers too
+        // 3. Scan the participant array by decoding their JIDs the exact same way
         const botUser = groupMetadata.participants.find(p => {
-            const cleanParticipantId = p.id.replace(/[^0-9]/g, '');
-            return cleanParticipantId === cleanBotNumber;
+            const decodedParticipant = jidDecode(p.id);
+            const participantNumber = decodedParticipant ? decodedParticipant.user : p.id.split(':')[0].split('@')[0];
+            return participantNumber === botUserNumber;
         });
 
+        // 4. Return true only if they have admin flags
         return botUser?.admin === 'admin' || botUser?.admin === 'superadmin';
     } catch (err) {
         console.error('Admin status tracking exception:', err);
