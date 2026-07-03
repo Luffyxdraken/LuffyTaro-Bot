@@ -1,13 +1,56 @@
 import { registerCommand } from '../lib/plugins.js';
+import { downloadContentFromMessage } from '@whiskeysockets/baileys';
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 registerCommand({
     name: 'sticker',
     aliases: ['s'],
     category: 'fun',
-    description: 'Transposes static media container inputs directly to WebP files.',
+    description: 'Converts images or videos directly to clean WhatsApp WebP stickers.',
     execute: async ({ client, from, msg }) => {
-        // Direct handling instruction notice context 
-        await client.sendMessage(from, { text: '🤖 Frame transformation to WebP asset requires providing static image assets on inputs.' }, { quoted: msg });
+        try {
+            const messageType = Object.keys(msg.message || {})[0];
+            const isQuoted = messageType === 'extendedTextMessage' && msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
+            const targetMessage = isQuoted ? msg.message.extendedTextMessage.contextInfo.quotedMessage : msg.message;
+            const targetType = Object.keys(targetMessage || {})[0];
+
+            if (targetType !== 'imageMessage' && targetType !== 'videoMessage') {
+                return await client.sendMessage(from, { text: '🤖 Please reply to or send an *image/video* with `.sticker` to convert it.' }, { quoted: msg });
+            }
+
+            await client.sendMessage(from, { text: '⏳ Converting your media asset into a sticker...' }, { quoted: msg });
+
+            const mediaData = targetMessage[targetType];
+            const stream = await downloadContentFromMessage(mediaData, targetType === 'imageMessage' ? 'image' : 'video');
+            
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
+
+            const tempInput = path.join(os.tmpdir(), `stick_in_${Date.now()}`);
+            const tempOutput = path.join(os.tmpdir(), `stick_out_${Date.now()}.webp`);
+            fs.writeFileSync(tempInput, buffer);
+
+            const ffmpegCommand = targetType === 'videoMessage'
+                ? `ffmpeg -i "${tempInput}" -vcodec libwebp -filter_complex "scale=512:512:force_original_aspect_ratio=decrease,fps=15,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000" -loop 0 -vsync 0 -an "${tempOutput}"`
+                : `ffmpeg -i "${tempInput}" -vcodec libwebp -vf "scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2:color=0x00000000" "${tempOutput}"`;
+
+            exec(ffmpegCommand, async (err) => {
+                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+                if (err) {
+                    return await client.sendMessage(from, { text: '❌ Conversion failed. Check that FFmpeg is installed on your server environment.' }, { quoted: msg });
+                }
+                const stickerBuffer = fs.readFileSync(tempOutput);
+                await client.sendMessage(from, { sticker: stickerBuffer }, { quoted: msg });
+                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+            });
+        } catch (e) {
+            await client.sendMessage(from, { text: '❌ An error occurred while generating sticker block.' }, { quoted: msg });
+        }
     }
 });
 
@@ -16,7 +59,38 @@ registerCommand({
     category: 'fun',
     description: 'Decodes sticker objects converting them cleanly back to native image formats.',
     execute: async ({ client, from, msg }) => {
-        await client.sendMessage(from, { text: '⚠️ Target sticker parameters directly by providing reply message bindings.' }, { quoted: msg });
+        try {
+            const isQuoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+            const targetMessage = isQuoted ? msg.message.extendedTextMessage.contextInfo.quotedMessage : null;
+            
+            if (!targetMessage || !targetMessage.stickerMessage) {
+                return await client.sendMessage(from, { text: '⚠️ Please reply directly to a *sticker* with `.toimg` to decode it.' }, { quoted: msg });
+            }
+
+            await client.sendMessage(from, { text: '🔄 Transforming sticker back to native image format...' }, { quoted: msg });
+
+            const stream = await downloadContentFromMessage(targetMessage.stickerMessage, 'sticker');
+            let buffer = Buffer.from([]);
+            for await (const chunk of stream) {
+                buffer = Buffer.concat([buffer, chunk]);
+            }
+
+            const tempInput = path.join(os.tmpdir(), `st2im_in_${Date.now()}.webp`);
+            const tempOutput = path.join(os.tmpdir(), `st2im_out_${Date.now()}.png`);
+            fs.writeFileSync(tempInput, buffer);
+
+            exec(`ffmpeg -i "${tempInput}" "${tempOutput}"`, async (err) => {
+                if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+                if (err) {
+                    return await client.sendMessage(from, { text: '❌ Failed to decode WebP container format.' }, { quoted: msg });
+                }
+                const imgBuffer = fs.readFileSync(tempOutput);
+                await client.sendMessage(from, { image: imgBuffer, caption: '✅ Sticker converted back to clean image format.' }, { quoted: msg });
+                if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+            });
+        } catch (e) {
+            await client.sendMessage(from, { text: '❌ Failed to process conversion command.' }, { quoted: msg });
+        }
     }
 });
 
