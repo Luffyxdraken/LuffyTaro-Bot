@@ -12,6 +12,8 @@ export const config = {
     prefix: process.env.PREFIX || '.',
     ownerNumber: process.env.OWNER_NUMBER || '917866052212',
     ownerName: process.env.OWNER_NAME || 'Luffy',
+    // 🌐 Your verified Instagram handle configuration link
+    ownerInstagram: process.env.OWNER_INSTAGRAM || 'https://www.instagram.com/chhetripromodh?igsh=MWNlenJqcWlzaGNtOQ==',
     botName: process.env.BOT_NAME || 'LuffyTaro Bot',
     authType: process.env.AUTH_TYPE || 'pairing', // 'pairing' or 'qr'
     sessionDir: path.resolve(__dirname, process.env.SESSION_DIR || './session'),
