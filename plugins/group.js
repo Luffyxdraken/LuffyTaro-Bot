@@ -16,12 +16,27 @@ function extractTargetJid(msg, args) {
     return target;
 }
 
-// Helper function to check if the bot itself is an active group admin
+// UPGRADED: Robust admin check that handles multi-device identifier strings seamlessly
 async function checkBotAdminStatus(client, from) {
-    const groupMetadata = await client.groupMetadata(from);
-    const botJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
-    const botUser = groupMetadata.participants.find(p => p.id === botJid);
-    return botUser?.admin === 'admin' || botUser?.admin === 'superadmin';
+    try {
+        const groupMetadata = await client.groupMetadata(from);
+        
+        // Extract the absolute clean phone number prefix of the bot
+        const rawBotId = client.user.id || client.user.jid;
+        const cleanBotNumber = rawBotId.split('@')[0].split(':')[0]; 
+        const normalizedBotJid = `${cleanBotNumber}@s.whatsapp.net`;
+
+        // Check if any admin entry's ID matches our normalized bot JID
+        const botUser = groupMetadata.participants.find(p => {
+            const cleanParticipantId = p.id.split('@')[0].split(':')[0] + '@s.whatsapp.net';
+            return cleanParticipantId === normalizedBotJid;
+        });
+
+        return botUser?.admin === 'admin' || botUser?.admin === 'superadmin';
+    } catch (err) {
+        console.error('Admin status tracking exception:', err);
+        return false;
+    }
 }
 
 registerCommand({
@@ -90,7 +105,10 @@ registerCommand({
         const target = extractTargetJid(msg, args);
         if (!target) return await client.sendMessage(from, { text: '⚠️ Supply targeted member notation reference by tagging them or replying.' }, { quoted: msg });
 
-        const botJid = client.user.id.split(':')[0] + '@s.whatsapp.net';
+        const rawBotId = client.user.id || client.user.jid;
+        const cleanBotNumber = rawBotId.split('@')[0].split(':')[0]; 
+        const botJid = `${cleanBotNumber}@s.whatsapp.net`;
+        
         if (target === botJid) return await client.sendMessage(from, { text: '🤖 I cannot extract myself from this operational runtime.' }, { quoted: msg });
 
         try {
