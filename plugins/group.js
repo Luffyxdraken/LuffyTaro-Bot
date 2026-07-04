@@ -218,9 +218,9 @@ registerCommand({
         if (!(await checkUserAdminStatus(client, from, sender))) {
             return await client.sendMessage(from, { text: '❌ Only group admins can toggle welcome' }, { quoted: msg });
         }
-        const val = args[0]?.toLowerCase() === 'on';
-        await updateGroupSetting(from, 'welcome', val);
-        await client.sendMessage(from, { text: `👋 Welcome messages: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
+       const val = args[0]?.toLowerCase() === 'on'? 1 : 0;
+await updateGroupSetting(from, 'welcome', val);
+await client.sendMessage(from, { text: `👋 Welcome: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
     }
 });
 
