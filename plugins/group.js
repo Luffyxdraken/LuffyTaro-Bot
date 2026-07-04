@@ -1,8 +1,8 @@
 import { registerCommand } from '../lib/plugins.js';
 import { updateGroupSetting, getGroupSetting, addWarn, resetWarns } from '../lib/db.js';
-import { jidDecode } from '@whiskeysockets/baileys';
+import { jidDecode, delay } from '@whiskeysockets/baileys';
 
-// Helper function to extract a target JID from mentions, replies, or raw text arguments
+// Helper functions
 function extractTargetJid(msg, args) {
     let target = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
     if (!target && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
@@ -17,16 +17,18 @@ function extractTargetJid(msg, args) {
     return target;
 }
 
+function isNumeric(n) {
+    return!isNaN(parseFloat(n)) && isFinite(n);
+}
+
 async function checkBotAdminStatus(client, from) {
     try {
         const groupMetadata = await client.groupMetadata(from);
         const botId = client.user.id;
         const botJid = jidDecode(botId)?.user + '@s.whatsapp.net';
-
         const botParticipant = groupMetadata.participants.find(p => p.id === botJid);
         return botParticipant?.admin === 'admin' || botParticipant?.admin === 'superadmin';
     } catch (err) {
-        console.error('Bot admin check error:', err);
         return false;
     }
 }
@@ -81,6 +83,30 @@ registerCommand({
 });
 
 registerCommand({
+    name: 'wapoll',
+    category: 'group',
+    description: 'Create WhatsApp poll',
+    usage: '.wapoll Title,Option1,Option2,Option3',
+    execute: async ({ client, from, msg, isGroup, args, sender }) => {
+        if (!isGroup) return;
+        if (!(await checkUserAdminStatus(client, from, sender))) {
+            return client.sendMessage(from, {text: '❌ Only admins'}, {quoted: msg});
+        }
+        const text = args.join(' ');
+        if (!text.includes(',')) return client.sendMessage(from, {text: 'Usage:.wapoll Title,Opt1,Opt2'}, {quoted: msg});
+
+        const [title,...options] = text.split(',');
+        await client.sendMessage(from, {
+            poll: {
+                name: title.trim(),
+                values: options.map(o => o.trim()),
+                selectableCount: 1
+            }
+        }, {quoted: msg});
+    }
+});
+
+registerCommand({
     name: 'add',
     category: 'group',
     description: 'Injects specified mobile credential targets into metadata arrays.',
@@ -104,28 +130,107 @@ registerCommand({
 });
 
 registerCommand({
+    name: 'requests',
+    category: 'group',
+    description: 'Approve or reject pending join requests',
+    usage: '.requests approve all | reject all',
+    execute: async ({ client, from, msg, isGroup, args, sender }) => {
+        if (!isGroup) return;
+        if (!(await checkUserAdminStatus(client, from, sender))) return;
+
+        const list = await client.groupRequestParticipantsList(from);
+        if (!list.length) return client.sendMessage(from, {text: 'No pending requests'}, {quoted: msg});
+
+        if (args[0] === 'approve' && args[1] === 'all') {
+            for (let x of list) {
+                await client.groupRequestParticipantsUpdate(from, [x.jid], 'approve');
+                await delay(900);
+            }
+            return client.sendMessage(from, {text: `✅ Approved ${list.length}`}, {quoted: msg});
+        }
+        if (args[0] === 'reject' && args[1] === 'all') {
+            for (let x of list) {
+                await client.groupRequestParticipantsUpdate(from, [x.jid], 'reject');
+                await delay(900);
+            }
+            return client.sendMessage(from, {text: `❌ Rejected ${list.length}`}, {quoted: msg});
+        }
+
+        let txt = '*Pending requests:*\n\n';
+        list.forEach((x,i) => txt += `${i+1}. @${x.jid.split('@')[0]}\n`);
+        client.sendMessage(from, {text: txt, mentions: list.map(x => x.jid)}, {quoted: msg});
+    }
+});
+
+registerCommand({
     name: 'kick',
     category: 'group',
-    description: 'Expels target mappings.',
+    description: 'Kick member. Supports.kick all and.kick 91',
     execute: async ({ client, from, msg, isGroup, args, sender }) => {
         if (!isGroup) return;
         if (!(await checkUserAdminStatus(client, from, sender))) {
             return await client.sendMessage(from, { text: '❌ Only group admins can kick members' }, { quoted: msg });
         }
         if (!(await checkBotAdminStatus(client, from))) {
-            return await client.sendMessage(from, { text: '❌ Action rejected. I must be a *Group Admin* to kick members.' }, { quoted: msg });
+            return await client.sendMessage(from, { text: '❌ I need admin to kick members' }, { quoted: msg });
         }
+
+        const meta = await client.groupMetadata(from);
+
+        //.kick all
+        if (args[0] === 'all') {
+            const users = meta.participants.filter(p =>!p.admin && p.id!== sender);
+            await client.sendMessage(from, {text: `⚠️ Kicking ${users.length} members in 5s... Restart bot to stop`});
+            await new Promise(r => setTimeout(r, 5000));
+            for (let u of users) {
+                await client.groupParticipantsUpdate(from, [u.id], 'remove');
+                await delay(1000);
+            }
+            return;
+        }
+
+        //.kick 91 - kick numbers starting with 91
+        if (args[0] && isNumeric(args[0])) {
+            const users = meta.participants.filter(p =>!p.admin && p.id.split('@')[0].startsWith(args[0]));
+            await client.sendMessage(from, {text: `⚠️ Kicking ${users.length} members starting with ${args[0]} in 5s...`});
+            await new Promise(r => setTimeout(r, 5000));
+            for (let u of users) {
+                await client.groupParticipantsUpdate(from, [u.id], 'remove');
+                await delay(1000);
+            }
+            return;
+        }
+
+        // Normal.kick @tag
         const target = extractTargetJid(msg, args);
-        if (!target) return await client.sendMessage(from, { text: '⚠️ Tag or reply to a member to kick them.' }, { quoted: msg });
-        const botNumber = jidDecode(client.user.id)?.user;
-        const targetNumber = jidDecode(target)?.user;
-        if (targetNumber === botNumber) return await client.sendMessage(from, { text: '🤖 I cannot kick myself.' }, { quoted: msg });
-        try {
-            await client.groupParticipantsUpdate(from, [target], 'remove');
-            await client.sendMessage(from, { text: '✅ Member removed from group.' }, { quoted: msg });
-        } catch (e) {
-            await client.sendMessage(from, { text: '❌ Failed to remove member.' }, { quoted: msg });
-        }
+        if (!target) return await client.sendMessage(from, { text: '⚠️ Tag or reply to a member' }, { quoted: msg });
+
+        await client.groupParticipantsUpdate(from, [target], 'remove');
+        await client.sendMessage(from, { text: `✅ Kicked @${target.split('@')[0]}`, mentions: [target] }, { quoted: msg });
+    }
+});
+
+registerCommand({
+    name: 'invite',
+    category: 'group',
+    description: 'Get group invite link',
+    execute: async ({ client, from, msg, isGroup, sender }) => {
+        if (!isGroup) return;
+        if (!(await checkUserAdminStatus(client, from, sender))) return;
+        const code = await client.groupInviteCode(from);
+        client.sendMessage(from, {text: `https://chat.whatsapp.com/${code}`}, {quoted: msg});
+    }
+});
+
+registerCommand({
+    name: 'revoke',
+    category: 'group',
+    description: 'Revoke group invite link',
+    execute: async ({ client, from, msg, isGroup, sender }) => {
+        if (!isGroup) return;
+        if (!(await checkUserAdminStatus(client, from, sender))) return;
+        await client.groupRevokeInvite(from);
+        client.sendMessage(from, {text: '✅ Invite link revoked'}, {quoted: msg});
     }
 });
 
@@ -212,30 +317,60 @@ registerCommand({
 registerCommand({
     name: 'welcome',
     category: 'group',
-    description: 'Toggle custom entrance events alerts configuration switches.',
+    description: 'Toggle welcome + set custom message..welcome on/off OR.welcome set Welcome to group!',
     execute: async ({ client, from, msg, isGroup, args, sender }) => {
         if (!isGroup) return;
         if (!(await checkUserAdminStatus(client, from, sender))) {
-            return await client.sendMessage(from, { text: '❌ Only group admins can toggle welcome' }, { quoted: msg });
+            return await client.sendMessage(from, { text: '❌ Only group admins' }, { quoted: msg });
         }
-        const val = args[0]?.toLowerCase() === 'on'? 1 : 0;
-        await updateGroupSetting(from, 'welcome', val);
-        await client.sendMessage(from, { text: `👋 Welcome: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
+
+        if (args[0] === 'on') {
+            await updateGroupSetting(from, 'welcome', 1);
+            return await client.sendMessage(from, { text: '👋 Welcome messages: *ON*' }, { quoted: msg });
+        }
+        if (args[0] === 'off') {
+            await updateGroupSetting(from, 'welcome', 0);
+            return await client.sendMessage(from, { text: '👋 Welcome messages: *OFF*' }, { quoted: msg });
+        }
+        if (args[0] === 'set') {
+            const customMsg = args.slice(1).join(' ');
+            if (!customMsg) return client.sendMessage(from, {text: 'Usage:.welcome set Your message here. Use @user for mention'}, {quoted: msg});
+            await updateGroupSetting(from, 'welcome_msg', customMsg);
+            return client.sendMessage(from, {text: `✅ Custom welcome message saved:\n${customMsg}`}, {quoted: msg});
+        }
+
+        const status = await getGroupSetting(from, 'welcome');
+        client.sendMessage(from, {text: `👋 Welcome: *${status===1? 'ON' : 'OFF'}*\nUsage:.welcome on/off/set message`}, {quoted: msg});
     }
 });
 
 registerCommand({
     name: 'goodbye',
     category: 'group',
-    description: 'Toggle custom exit events logs monitoring parameters.',
+    description: 'Toggle goodbye + set custom message..goodbye on/off OR.goodbye set Bye @user!',
     execute: async ({ client, from, msg, isGroup, args, sender }) => {
         if (!isGroup) return;
         if (!(await checkUserAdminStatus(client, from, sender))) {
-            return await client.sendMessage(from, { text: '❌ Only group admins can toggle goodbye' }, { quoted: msg });
+            return await client.sendMessage(from, { text: '❌ Only group admins' }, { quoted: msg });
         }
-        const val = args[0]?.toLowerCase() === 'on'? 1 : 0; // changed this line
-        await updateGroupSetting(from, 'goodbye', val);
-        await client.sendMessage(from, { text: `🏃 Goodbye messages: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
+
+        if (args[0] === 'on') {
+            await updateGroupSetting(from, 'goodbye', 1);
+            return await client.sendMessage(from, { text: '🏃 Goodbye messages: *ON*' }, { quoted: msg });
+        }
+        if (args[0] === 'off') {
+            await updateGroupSetting(from, 'goodbye', 0);
+            return await client.sendMessage(from, { text: '🏃 Goodbye messages: *OFF*' }, { quoted: msg });
+        }
+        if (args[0] === 'set') {
+            const customMsg = args.slice(1).join(' ');
+            if (!customMsg) return client.sendMessage(from, {text: 'Usage:.goodbye set Your message here. Use @user for mention'}, {quoted: msg});
+            await updateGroupSetting(from, 'goodbye_msg', customMsg);
+            return client.sendMessage(from, {text: `✅ Custom goodbye message saved:\n${customMsg}`}, {quoted: msg});
+        }
+
+        const status = await getGroupSetting(from, 'goodbye');
+        client.sendMessage(from, {text: `🏃 Goodbye: *${status===1? 'ON' : 'OFF'}*\nUsage:.goodbye on/off/set message`}, {quoted: msg});
     }
 });
 
