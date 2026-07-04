@@ -15,7 +15,7 @@ import { Boom } from '@hapi/boom';
 import { config } from './config.js';
 import { initDatabase, getSetting, getGroupSetting } from './lib/db.js'; // added getGroupSetting
 import { loadPlugins, commands } from './lib/plugins.js';
-import { checkUserAdminStatus } from './commands/group.js'; // added this for antilink
+import { checkUserAdminStatus } from './plugins/group.js'; // ✅ correct
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -133,12 +133,12 @@ async function startLuffyBot() {
 
 import { getGroupSetting } from './lib/db.js';
 
-// Listen for group join/leave
-sock.ev.on('group-participants.update', async (update) => {
+// ... later in code ...
+client.ev.on('group-participants.update', async (update) => {
     const { id: groupId, participants, action } = update;
 
     try {
-        const groupMeta = await sock.groupMetadata(groupId);
+        const groupMeta = await client.groupMetadata(groupId);
         const groupName = groupMeta.subject;
 
         for (let user of participants) {
@@ -147,21 +147,19 @@ sock.ev.on('group-participants.update', async (update) => {
             if (action === 'add') {
                 const welcome = await getGroupSetting(groupId, 'welcome');
                 if (welcome === 1) {
-                    const welcomeMsg = `👋 Welcome @${userNum} to *${groupName}*!\n\nHope you enjoy your stay here 😊`;
-                    await sock.sendMessage(groupId, {
-                        text: welcomeMsg,
-                        mentions: [user]
+                    await client.sendMessage(groupId, {
+                        text: `👋 Welcome @${userNum} to *${groupName}*!`,
+                        mentions:
                     });
                 }
             }
 
-            if (action === 'remove') {
+            if (action === 'remove' || action === 'leave') {
                 const goodbye = await getGroupSetting(groupId, 'goodbye');
                 if (goodbye === 1) {
-                    const byeMsg = `🏃 @${userNum} left *${groupName}*\n\nTake care!`;
-                    await sock.sendMessage(groupId, {
-                        text: byeMsg,
-                        mentions: [user]
+                    await client.sendMessage(groupId, {
+                        text: `🏃 @${userNum} left *${groupName}*`,
+                        mentions:
                     });
                 }
             }
