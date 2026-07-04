@@ -131,31 +131,43 @@ async function startLuffyBot() {
         }
     });
 
-client.ev.on('group-participants.update', async (update) => {
-    const { id, participants, action } = update;
+import { getGroupSetting } from './lib/db.js';
+
+// Listen for group join/leave
+sock.ev.on('group-participants.update', async (update) => {
+    const { id: groupId, participants, action } = update;
 
     try {
-        const settings = await getGroupSetting(id);
-        if (!settings.welcome &&!settings.goodbye) return; // both off
+        const groupMeta = await sock.groupMetadata(groupId);
+        const groupName = groupMeta.subject;
 
-        const metadata = await client.groupMetadata(id);
-        const groupName = metadata.subject;
+        for (let user of participants) {
+            const userNum = user.split('@')[0];
 
-        for (const participant of participants) {
-            const user = '@' + participant.split('@')[0];
-
-            if (action === 'add' && settings.welcome === 1) {
-                const msg = `👋 Welcome ${user} to *${groupName}*!\n\nRead group rules and enjoy!`;
-                await client.sendMessage(id, { text: msg, mentions: [participant] });
+            if (action === 'add') {
+                const welcome = await getGroupSetting(groupId, 'welcome');
+                if (welcome === 1) {
+                    const welcomeMsg = `👋 Welcome @${userNum} to *${groupName}*!\n\nHope you enjoy your stay here 😊`;
+                    await sock.sendMessage(groupId, {
+                        text: welcomeMsg,
+                        mentions: [user]
+                    });
+                }
             }
 
-            if (action === 'remove' && settings.goodbye === 1) {
-                const msg = `👋 Goodbye ${user}. You left *${groupName}*`;
-                await client.sendMessage(id, { text: msg, mentions: [participant] });
+            if (action === 'remove') {
+                const goodbye = await getGroupSetting(groupId, 'goodbye');
+                if (goodbye === 1) {
+                    const byeMsg = `🏃 @${userNum} left *${groupName}*\n\nTake care!`;
+                    await sock.sendMessage(groupId, {
+                        text: byeMsg,
+                        mentions: [user]
+                    });
+                }
             }
         }
-    } catch (e) {
-        console.log('Welcome/Goodbye error:', e);
+    } catch (err) {
+        console.error('Welcome/Goodbye error:', err);
     }
 });
 
