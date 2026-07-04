@@ -130,36 +130,59 @@ async function startLuffyBot() {
         }
     });
 
-    client.ev.on('messages.upsert', async (chatUpdate) => {
-        try {
-            const msg = chatUpdate.messages[0];
-            if (!msg.message) return;
-            if (msg.key && msg.key.remoteJid === 'status@broadcast') return;
+client.ev.on('messages.upsert', async (chatUpdate) => {
+    try {
+        const msg = chatUpdate.messages[0];
+        if (!msg.message) return;
+        if (msg.key && msg.key.remoteJid === 'status@broadcast') return;
 
-            const from = msg.key.remoteJid;
-            const isGroup = from.endsWith('@g.us');
-            
-            // Text Extraction Parsing Block
-            let body = '';
-            if (msg.message.conversation) body = msg.message.conversation;
-            else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
-            else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
-            else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
+        const from = msg.key.remoteJid;
+        const isGroup = from.endsWith('@g.us');
 
-                        // Old line: const sender = isGroup ? msg.key.participant : from;
-            // Updated Safe Target Check:
-            const sender = (isGroup ? msg.key.participant : from) || '';
-            const isOwner = sender.replace(/[^0-9]/g, '') === (config.ownerNumber || '').replace(/[^0-9]/g, '');
-            const currentMode = await getSetting('mode') || 'public';
-            
-            if (currentMode === 'private' && !isOwner) return;
+        // Text Extraction Parsing Block
+        let body = '';
+        if (msg.message.conversation) body = msg.message.conversation;
+        else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
+        else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
+        else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
 
-            if (config.autoRead) await client.readMessages([msg.key]);
-            if (config.autoTyping) await client.sendPresenceUpdate('composing', from);
-            if (config.autoRecording) await client.sendPresenceUpdate('recording', from);
+        const sender = (isGroup? msg.key.participant : from) || '';
+        const isOwner = sender.replace(/[^0-9]/g, '') === (config.ownerNumber || '').replace(/[^0-9]/g, '');
+        const currentMode = await getSetting('mode') || 'public';
 
-            const isCmd = body.startsWith(config.prefix);
-            if (!isCmd) return;
+        if (currentMode === 'private' &&!isOwner) return;
+
+        // ===== PASTE ANTILINK HERE =====
+        if (isGroup) {
+            const settings = await getGroupSetting(from);
+            if (settings.antilink === 1) {
+                const linkRegex = /https?:\/\/|chat\.whatsapp\.com|instagram\.com|tiktok\.com|youtube\.com/i;
+
+                if (linkRegex.test(body)) {
+                    const isAdmin = await checkUserAdminStatus(client, from, sender);
+                    if (!isAdmin) {
+                        try {
+                            await client.sendMessage(from, { delete: msg.key });
+                            await client.sendMessage(from, {
+                                text: `🛡️ Link deleted! @${sender.split('@')[0]} - Links not allowed here`,
+                                mentions: [sender]
+                            });
+                            return; // important: stop here so command doesn't run
+                        } catch (e) {
+                            console.log('Antilink error:', e);
+                        }
+                    }
+                }
+            }
+        }
+        // ===== END ANTILINK =====
+
+        if (config.autoRead) await client.readMessages([msg.key]);
+        if (config.autoTyping) await client.sendPresenceUpdate('composing', from);
+        if (config.autoRecording) await client.sendPresenceUpdate('recording', from);
+
+        const isCmd = body.startsWith(config.prefix);
+        if (!isCmd) return;
 
             const args = body.slice(config.prefix.length).trim().split(/ +/);
             const commandName = args.shift().toLowerCase();
