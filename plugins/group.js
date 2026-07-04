@@ -1,7 +1,8 @@
-import { registerCommand } from '../lib/plugins.js';
-import { updateGroupSetting, getGroupSetting, addWarn, resetWarns } from '../lib/db.js';
+import { registerCommand } from '../lib/Handler.js';
+import { updateSetting, getSettings } from '../sql/database.js
 import { jidDecode, delay } from '@whiskeysockets/baileys';
 
+    
 // Helper functions
 function extractTargetJid(msg, args) {
     let target = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
