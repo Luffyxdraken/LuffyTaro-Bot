@@ -13,8 +13,9 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import { config } from './config.js';
-import { initDatabase, getSetting } from './lib/db.js';
+import { initDatabase, getSetting, getGroupSetting } from './lib/db.js'; // added getGroupSetting
 import { loadPlugins, commands } from './lib/plugins.js';
+import { checkUserAdminStatus } from './commands/group.js'; // added this for antilink
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,6 +130,34 @@ async function startLuffyBot() {
             console.log(chalk.cyan(`👑 Master: ${config.ownerName} [${config.ownerNumber}]`));
         }
     });
+
+client.ev.on('group-participants.update', async (update) => {
+    const { id, participants, action } = update;
+
+    try {
+        const settings = await getGroupSetting(id);
+        if (!settings.welcome &&!settings.goodbye) return; // both off
+
+        const metadata = await client.groupMetadata(id);
+        const groupName = metadata.subject;
+
+        for (const participant of participants) {
+            const user = '@' + participant.split('@')[0];
+
+            if (action === 'add' && settings.welcome === 1) {
+                const msg = `👋 Welcome ${user} to *${groupName}*!\n\nRead group rules and enjoy!`;
+                await client.sendMessage(id, { text: msg, mentions: [participant] });
+            }
+
+            if (action === 'remove' && settings.goodbye === 1) {
+                const msg = `👋 Goodbye ${user}. You left *${groupName}*`;
+                await client.sendMessage(id, { text: msg, mentions: [participant] });
+            }
+        }
+    } catch (e) {
+        console.log('Welcome/Goodbye error:', e);
+    }
+});
 
 client.ev.on('messages.upsert', async (chatUpdate) => {
     try {
