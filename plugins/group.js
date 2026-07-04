@@ -218,9 +218,9 @@ registerCommand({
         if (!(await checkUserAdminStatus(client, from, sender))) {
             return await client.sendMessage(from, { text: '❌ Only group admins can toggle welcome' }, { quoted: msg });
         }
-       const val = args[0]?.toLowerCase() === 'on'? 1 : 0;
-await updateGroupSetting(from, 'welcome', val);
-await client.sendMessage(from, { text: `👋 Welcome: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
+        const val = args[0]?.toLowerCase() === 'on'? 1 : 0;
+        await updateGroupSetting(from, 'welcome', val);
+        await client.sendMessage(from, { text: `👋 Welcome: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
     }
 });
 
@@ -233,7 +233,7 @@ registerCommand({
         if (!(await checkUserAdminStatus(client, from, sender))) {
             return await client.sendMessage(from, { text: '❌ Only group admins can toggle goodbye' }, { quoted: msg });
         }
-        const val = args[0]?.toLowerCase() === 'on';
+        const val = args[0]?.toLowerCase() === 'on'? 1 : 0; // changed this line
         await updateGroupSetting(from, 'goodbye', val);
         await client.sendMessage(from, { text: `🏃 Goodbye messages: *${val? 'ON' : 'OFF'}*` }, { quoted: msg });
     }
