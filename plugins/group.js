@@ -17,29 +17,30 @@ function extractTargetJid(msg, args) {
     return target;
 }
 
-// Robust admin check that handles multi-device identifier strings seamlessly
 async function checkBotAdminStatus(client, from) {
     try {
         const groupMetadata = await client.groupMetadata(from);
-        
-        // 1. Extract the raw bot ID string safely
-        const rawBotId = client.user.id || client.user.jid || '';
-        
-        // 2. Decode the JID properly to get the clean user phone number (e.g., "91XXXXXXXXXX")
-        const decodedBot = jidDecode(rawBotId);
-        const botUserNumber = decodedBot ? decodedBot.user : rawBotId.split(':')[0].split('@')[0];
 
-        // 3. Scan the participant array by decoding their JIDs the exact same way
-        const botUser = groupMetadata.participants.find(p => {
-            const decodedParticipant = jidDecode(p.id);
-            const participantNumber = decodedParticipant ? decodedParticipant.user : p.id.split(':')[0].split('@')[0];
-            return participantNumber === botUserNumber;
-        });
+        // DEBUG: See what bot ID Baileys gives us
+        const rawBotId = client.user.id;
+        console.log('Raw bot ID:', rawBotId);
 
-        // 4. Return true only if they have admin flags
-        return botUser?.admin === 'admin' || botUser?.admin === 'superadmin';
+        // Remove device ID :1, :2, :3 etc
+        const botJid = rawBotId.split(':')[0] + '@s.whatsapp.net';
+        console.log('Cleaned bot JID:', botJid);
+
+        // DEBUG: See all participants JIDs
+        console.log('Group participants:', groupMetadata.participants.map(p => p.id));
+
+        const botParticipant = groupMetadata.participants.find(p => p.id === botJid);
+        console.log('Found bot participant:', botParticipant);
+
+        const isAdmin = botParticipant?.admin === 'admin' || botParticipant?.admin === 'superadmin';
+        console.log('Is bot admin?', isAdmin);
+
+        return isAdmin;
     } catch (err) {
-        console.error('Admin status tracking exception:', err);
+        console.error('Admin check error:', err);
         return false;
     }
 }
