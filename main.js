@@ -1,256 +1,85 @@
-import { fileURLToPath } from 'url';
-import path from 'path';
-import fs from 'fs';
-import express from 'express';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import chalk from 'chalk';
-import readline from 'readline';
-import makeWASocket, {
-    useMultiFileAuthState,
-    DisconnectReason,
-    fetchLatestBaileysVersion,
-    makeCacheableSignalKeyStore
-} from '@whiskeysockets/baileys';
-import { Boom } from '@hapi/boom';
-import { config } from './config.js';
-import { initDatabase, getSetting, getGroupSetting } from './lib/db.js'; // added getGroupSetting
-import { loadPlugins, commands } from './lib/plugins.js';
-import { checkUserAdminStatus } from './plugins/group.js'; // ✅ correct
+import QRCode from 'qrcode-terminal';
+import fs from 'fs';
+import path from 'path';
+import { CONFIG } from './config.js';
+import { loadPlugins, commands } from './lib/Handler.js';
+import { getSettings } from './sql/database.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const app = express();
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
-
-// HTTP Health checks & Keep-Alive binding
-app.get('/', (req, res) => res.status(200).json({ status: 'online', bot: config.botName }));
-
-const server = app.listen(config.port, () => {
-    console.log(chalk.magenta(`🌐 Express monitor binding activated on port ${config.port}`));
-});
-
-// 🛡️ Safe guard to prevent port collision crashes
-server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-        console.log(chalk.yellow(`⚠️ Port ${config.port} is busy. Continuing session connection...`));
-    } else {
-        console.error(chalk.red('❌ Web Server Error:'), err);
+// Decodes Session ID and creates the creds file if it doesn't exist
+async function initSession() {
+  if (CONFIG.SESSION_ID) {
+    if (!fs.existsSync(CONFIG.SESSION_DIR)) {
+      fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
     }
-});
-
-export let client;
-const startTime = Date.now();
-
-async function startLuffyBot() {
-    await initDatabase();
-    await loadPlugins();
-
-    if (!fs.existsSync(config.sessionDir)) {
-        fs.mkdirSync(config.sessionDir, { recursive: true });
+    const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
+    
+    if (!fs.existsSync(credsPath)) {
+      try {
+        // Strip out prefixes if your session generator includes one (e.g., "Session;;;")
+        const base64Data = CONFIG.SESSION_ID.includes(';;;') 
+          ? CONFIG.SESSION_ID.split(';;;')[1] 
+          : CONFIG.SESSION_ID;
+          
+        const decodedCreds = Buffer.from(base64Data, 'base64').toString('utf-8');
+        fs.writeFileSync(credsPath, decodedCreds);
+        console.log('✅ Session ID successfully authenticated and imported!');
+      } catch (err) {
+        console.error('❌ Invalid Session ID format:', err.message);
+      }
     }
-
-    // 🔐 DECODE SESSION ID ENV STRING TO FILE
-    const credsPath = path.join(config.sessionDir, 'creds.json');
-    if (process.env.SESSION_ID && !fs.existsSync(credsPath)) {
-        console.log(chalk.yellow('📦 SESSION_ID environment string parsing...'));
-        try {
-            const cleanedSession = process.env.SESSION_ID.replace(/LuffyTaro;;/g, '').trim();
-            const sessionData = Buffer.from(cleanedSession, 'base64').toString('utf-8');
-            fs.writeFileSync(credsPath, sessionData);
-            console.log(chalk.bold.green('✅ Session restored successfully via credentials string!'));
-        } catch (e) {
-            console.log(chalk.red('❌ SESSION_ID decoding failure. Is your variable string intact?'));
-        }
-    }
-
-    const { state, saveCreds } = await useMultiFileAuthState(config.sessionDir);
-    const { version } = await fetchLatestBaileysVersion();
-
-    // 💻 UPGRADED: Added connection timeout safety configs for server drops
-    client = makeWASocket({
-        version,
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: config.authType === 'qr',
-        auth: {
-            creds: state.creds,
-            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' }))
-        },
-        browser: ['Ubuntu', 'Chrome', '20.0.04'],
-        connectTimeoutMs: 60000,       // Wait up to 60 seconds for handshake response
-        defaultQueryTimeoutMs: 0,      // Disable quick queries timeout to prevent connection drop cycles
-        keepAliveIntervalMs: 30000     // Keep websocket active via background heartbeats
-    });
-
-    // Handle Pairing Setup Scenario (Skipped if creds are active)
-    if (config.authType === 'pairing' && !client.authState.creds.registered && !fs.existsSync(credsPath)) {
-        setTimeout(async () => {
-            const phoneNumber = config.ownerNumber.replace(/[^0-9]/g, '');
-            if (!phoneNumber) {
-                console.log(chalk.red('❌ OWNER_NUMBER must be populated in environment setup for pairing connection!'));
-                process.exit(1);
-            }
-            try {
-                const code = await client.requestPairingCode(phoneNumber);
-                console.log(chalk.bold.yellow('\n🤖 ---------------- LUFFYTARO PAIRING ENGINE ---------------- 🤖'));
-                console.log(chalk.bold.white(`     Use the code below to pair your bot within WhatsApp App:`));
-                console.log(chalk.bold.cyan(`\n                     👉   ${code}   👈\n`));
-                console.log(chalk.bold.yellow('-------------------------------------------------------------\n'));
-            } catch (err) {
-                console.error(chalk.red('Failed to request pairing code: '), err);
-            }
-        }, 3000);
-    }
-
-    client.ev.on('creds.update', saveCreds);
-
-    client.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr && config.authType === 'qr' && !fs.existsSync(credsPath)) {
-            console.log(chalk.yellow('📸 Scan the QR code displayed above to establish initialization.'));
-        }
-
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error instanceof Boom) 
-                ? lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut 
-                : true;
-            
-            console.log(chalk.red(`⚠️ Connection severed due to: ${lastDisconnect?.error}. Reconnecting context: ${shouldReconnect}`));
-            
-            if (shouldReconnect) {
-                startLuffyBot();
-            } else {
-                console.log(chalk.bold.red('❌ Device Session permanently logged out. Clear local session path and restart.'));
-                process.exit(1);
-            }
-        } else if (connection === 'open') {
-            console.log(chalk.bold.green(`\n✅ ${config.botName} operational on multi-device handshake interface!`));
-            console.log(chalk.cyan(`👑 Master: ${config.ownerName} [${config.ownerNumber}]`));
-        }
-    });
-
-import { getGroupSetting } from './lib/db.js';
-
-// ... later in code ...
-client.ev.on('group-participants.update', async (update) => {
-    const { id: groupId, participants, action } = update;
-
-    try {
-        const groupMeta = await client.groupMetadata(groupId);
-        const groupName = groupMeta.subject;
-
-        for (let user of participants) {
-            const userNum = user.split('@')[0];
-
-            if (action === 'add') {
-                const welcome = await getGroupSetting(groupId, 'welcome');
-                if (welcome === 1) {
-                    await client.sendMessage(groupId, {
-                        text: `👋 Welcome @${userNum} to *${groupName}*!`,
-                        mentions:
-                    });
-                }
-            }
-
-            if (action === 'remove' || action === 'leave') {
-                const goodbye = await getGroupSetting(groupId, 'goodbye');
-                if (goodbye === 1) {
-                    await client.sendMessage(groupId, {
-                        text: `🏃 @${userNum} left *${groupName}*`,
-                        mentions:
-                    });
-                }
-            }
-        }
-    } catch (err) {
-        console.error('Welcome/Goodbye error:', err);
-    }
-});
-
-client.ev.on('messages.upsert', async (chatUpdate) => {
-    try {
-        const msg = chatUpdate.messages[0];
-        if (!msg.message) return;
-        if (msg.key && msg.key.remoteJid === 'status@broadcast') return;
-
-        const from = msg.key.remoteJid;
-        const isGroup = from.endsWith('@g.us');
-
-        // Text Extraction Parsing Block
-        let body = '';
-        if (msg.message.conversation) body = msg.message.conversation;
-        else if (msg.message.imageMessage?.caption) body = msg.message.imageMessage.caption;
-        else if (msg.message.videoMessage?.caption) body = msg.message.videoMessage.caption;
-        else if (msg.message.extendedTextMessage?.text) body = msg.message.extendedTextMessage.text;
-
-        const sender = (isGroup? msg.key.participant : from) || '';
-        const isOwner = sender.replace(/[^0-9]/g, '') === (config.ownerNumber || '').replace(/[^0-9]/g, '');
-        const currentMode = await getSetting('mode') || 'public';
-
-        if (currentMode === 'private' &&!isOwner) return;
-
-        // ===== PASTE ANTILINK HERE =====
-        if (isGroup) {
-            const settings = await getGroupSetting(from);
-            if (settings.antilink === 1) {
-                const linkRegex = /https?:\/\/|chat\.whatsapp\.com|instagram\.com|tiktok\.com|youtube\.com/i;
-
-                if (linkRegex.test(body)) {
-                    const isAdmin = await checkUserAdminStatus(client, from, sender);
-                    if (!isAdmin) {
-                        try {
-                            await client.sendMessage(from, { delete: msg.key });
-                            await client.sendMessage(from, {
-                                text: `🛡️ Link deleted! @${sender.split('@')[0]} - Links not allowed here`,
-                                mentions: [sender]
-                            });
-                            return; // important: stop here so command doesn't run
-                        } catch (e) {
-                            console.log('Antilink error:', e);
-                        }
-                    }
-                }
-            }
-        }
-        // ===== END ANTILINK =====
-
-        if (config.autoRead) await client.readMessages([msg.key]);
-        if (config.autoTyping) await client.sendPresenceUpdate('composing', from);
-        if (config.autoRecording) await client.sendPresenceUpdate('recording', from);
-
-        const isCmd = body.startsWith(config.prefix);
-        if (!isCmd) return;
-
-            const args = body.slice(config.prefix.length).trim().split(/ +/);
-            const commandName = args.shift().toLowerCase();
-            
-            const matchedCmd = commands.find(cmd => cmd.name === commandName || (cmd.aliases && cmd.aliases.includes(commandName)));
-            
-            if (matchedCmd) {
-                if (matchedCmd.category === 'owner' && !isOwner) {
-                    return await client.sendMessage(from, { text: '❌ This access sequence is restricted exclusively to the Bot Overlord.' }, { quoted: msg });
-                }
-                
-                const context = {
-                    client,
-                    msg,
-                    from,
-                    isGroup,
-                    sender,
-                    args,
-                    isOwner,
-                    body,
-                    startTime
-                };
-                
-                await matchedCmd.execute(context);
-            }
-        } catch (err) {
-            console.error(chalk.red('Critical failure inside routing engine loop: '), err);
-        }
-    });
+  }
 }
 
-startLuffyBot();
+async function startBot() {
+  await loadPlugins();
+  await initSession(); // Run session string processor
+  
+  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  
+  const sock = makeWASocket({
+    logger: pino({ level: 'silent' }),
+    auth: state,
+    printQRInTerminal: !CONFIG.SESSION_ID // Only print QR if no Session ID is given
+  });
+
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
+    if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
+    
+    if (connection === 'close') {
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      if (shouldReconnect) startBot();
+    } else if (connection === 'open') {
+      console.log('✅ Bot successfully connected to WhatsApp via Session ID!');
+    }
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.message || msg.key.fromMe) return;
+
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    if (!text.startsWith(CONFIG.PREFIX)) return;
+
+    const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+    const command = commands.get(commandName);
+
+    if (command) {
+      try {
+        const settings = getSettings(msg.key.remoteJid);
+        if (settings.antilink && text.includes('chat.whatsapp.com')) return;
+
+        await command.function(sock, msg, args);
+      } catch (err) {
+        console.error(`Error executing ${commandName}:`, err);
+      }
+    }
+  });
+}
+
+startBot();
