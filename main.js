@@ -17,7 +17,6 @@ async function initSession() {
     
     if (!fs.existsSync(credsPath)) {
       try {
-        // Strip out prefixes if your session generator includes one (e.g., "Session;;;")
         const base64Data = CONFIG.SESSION_ID.includes(';;;') 
           ? CONFIG.SESSION_ID.split(';;;')[1] 
           : CONFIG.SESSION_ID;
@@ -58,6 +57,7 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // 1. CHAT MESSAGE INGESTION ROUTER
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -78,6 +78,34 @@ async function startBot() {
       } catch (err) {
         console.error(`Error executing ${commandName}:`, err);
       }
+    }
+  });
+
+  // 2. DISCORD-STYLE BACKGROUND AUTOMATION GATEWAY
+  sock.ev.on('group-participants.update', async (update) => {
+    const { id, participants, action } = update;
+    
+    try {
+      // Pull targeted group tracking rules directly from your sql engine
+      const settings = getSettings(id);
+      
+      for (let user of participants) {
+        const cleanUserTag = `@${user.split('@')[0]}`;
+
+        // Automated Entrance Alert
+        if (action === 'add' && settings.welcome === 'true') {
+          const welcomeMessage = `📥 **[NEW MEMBER]** 📥\n\nWelcome ${cleanUserTag} to our server layout!\n━━━━━━━━━━━━━━━━━━━━\n💬 Check the pins and enjoy your stay!`;
+          await sock.sendMessage(id, { text: welcomeMessage, mentions: [user] });
+        }
+
+        // Automated Exit Alert
+        if (action === 'remove' && settings.goodbye === 'true') {
+          const goodbyeMessage = `📤 **[USER EXIT]** 📤\n\n${cleanUserTag} just left the server architecture. \n━━━━━━━━━━━━━━━━━━━━\n*Press F to pay respects.*`;
+          await sock.sendMessage(id, { text: goodbyeMessage, mentions: [user] });
+        }
+      }
+    } catch (err) {
+      console.error('Automation tracker runtime exception:', err);
     }
   });
 }
