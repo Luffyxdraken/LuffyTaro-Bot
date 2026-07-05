@@ -3,7 +3,7 @@ import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
-import { CONFIG } from './config.js';
+import CONFIG from './config.js';
 import { loadPlugins, commands } from './lib/Handler.js';
 import { getSettings } from './sql/database.js';
 
