@@ -3,12 +3,17 @@ import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
-import * as CONFIG_MODULE from './config.js';
 import { loadPlugins, commands } from './lib/Handler.js';
 import { getSettings } from './sql/database.js';
 
-// ✅ PLACE IT EXACTLY HERE (Right after imports, before functions)
-const CONFIG = CONFIG_MODULE.CONFIG || CONFIG_MODULE.default || CONFIG_MODULE;
+// 🚀 Dynamic Config Loader (Bypasses all ESM syntax compilation crashes)
+let CONFIG = {};
+try {
+  const moduleData = await import('./config.js');
+  CONFIG = moduleData.CONFIG || moduleData.default || moduleData;
+} catch (e) {
+  console.error('⚠️ Critical error loading configuration variables:', e.message);
+}
 
 // Decodes Session ID and creates the creds file if it doesn't exist
 async function initSession() {
@@ -33,6 +38,7 @@ async function initSession() {
     }
   }
 }
+
 
 async function startBot() {
   await loadPlugins();
