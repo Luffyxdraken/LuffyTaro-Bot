@@ -1,17 +1,26 @@
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
+import fs from 'fs';
 
 let db;
+// In-memory cache layer to make synchronous reading work flawlessly with main.js loops
+const cache = new Map();
 
-// Safe async database initialization tracking 
+// Synchronously ensure the database directory exists before loading begins
+const dbDir = path.join(process.cwd(), 'sql');
+if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+}
+
+// System Database initialization sequence
 async function initDatabase() {
     db = await open({
-        filename: path.join(process.cwd(), 'sql', 'database.db'),
+        filename: path.join(dbDir, 'database.db'),
         driver: sqlite3.Database
     });
 
-    // Create settings table structure if it does not exist
+    // Generate structural table mapping keys if missing from schema arrays
     await db.exec(`
         CREATE TABLE IF NOT EXISTS settings (
             jid TEXT PRIMARY KEY,
@@ -22,33 +31,61 @@ async function initDatabase() {
             antispam TEXT DEFAULT 'false'
         )
     `);
+
+    // Hydrate the in-memory memory cache with everything stored inside the db
+    const rows = await db.all('SELECT * FROM settings');
+    for (const row of rows) {
+        cache.set(row.jid, row);
+    }
+    console.log('✅ Local SQL Configuration Array synced successfully.');
 }
 
-// Auto running setup loop
-initDatabase().catch(err => console.error('Database connection exception:', err));
+// Initialize database right away
+initDatabase().catch(err => console.error('CRITICAL: Database boot failed:', err));
 
-// Mock synchronous wrapper matching your main.js call signatures perfectly
+/**
+ * Returns configuration vectors instantly from cache to avoid blocking the main message loop.
+ */
 export function getSettings(jid) {
-    // Returns default states instantly while background records write asynchronously
-    // ensuring main.js execution loop never blocks
-    const defaultSettings = { jid, welcome: 'false', goodbye: 'false', antilink: 'false', antidelete: 'false', antispam: 'false' };
-    
-    // Fire-and-forget sync handler block to safely create rows
-    db?.get('SELECT * FROM settings WHERE jid = ?', [jid]).then(row => {
-        if (!row) {
-            db.run('INSERT INTO settings (jid) VALUES (?)', [jid]).catch(() => {});
-        }
-    }).catch(() => {});
+    const defaultSettings = { 
+        jid, 
+        welcome: 'false', 
+        goodbye: 'false', 
+        antilink: 'false', 
+        antidelete: 'false', 
+        antispam: 'false' 
+    };
 
-    return defaultSettings;
+    if (!cache.has(jid)) {
+        // Set fallback mapping in memory immediately
+        cache.set(jid, defaultSettings);
+        
+        // Fire-and-forget database insert so it saves in the background
+        db?.run('INSERT OR IGNORE INTO settings (jid) VALUES (?)', [jid]).catch(() => {});
+        return defaultSettings;
+    }
+
+    return cache.get(jid);
 }
 
+/**
+ * Updates group parameters and saves changes safely to both memory cache and disk.
+ */
 export async function updateGroupSetting(jid, settingName, value) {
-    // Safe dynamic column assignment tracking configurations securely
     const allowedColumns = ['welcome', 'goodbye', 'antilink', 'antidelete', 'antispam'];
     if (!allowedColumns.includes(settingName)) return false;
 
-    await db.run('INSERT INTO settings (jid) VALUES (?) ON CONFLICT(jid) DO NOTHING', [jid]);
-    await db.run(`UPDATE settings SET ${settingName} = ? WHERE jid = ?`, [value, jid]);
+    // Ensure record existence before performing an update operation
+    getSettings(jid);
+
+    // Update internal memory reference cache instantly
+    const cachedData = cache.get(jid);
+    cachedData[settingName] = String(value);
+    cache.set(jid, cachedData);
+
+    // Persist changes cleanly down to disk
+    if (db) {
+        await db.run(`UPDATE settings SET ${settingName} = ? WHERE jid = ?`, [String(value), jid]);
+    }
     return true;
 }
