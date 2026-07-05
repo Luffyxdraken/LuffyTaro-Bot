@@ -17,17 +17,20 @@ try {
 
 // Decodes Session ID and creates the creds file if it doesn't exist
 async function initSession() {
-  if (CONFIG.SESSION_ID) {
-    if (!fs.existsSync(CONFIG.SESSION_DIR)) {
-      fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
+  const sessionId = CONFIG.SESSION_ID || CONFIG.session_id;
+  const sessionDirectory = CONFIG.SESSION_DIR || CONFIG.session_dir || 'session';
+
+  if (sessionId) {
+    if (!fs.existsSync(sessionDirectory)) {
+      fs.mkdirSync(sessionDirectory, { recursive: true });
     }
-    const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
+    const credsPath = path.join(sessionDirectory, 'creds.json');
     
     if (!fs.existsSync(credsPath)) {
       try {
-        const base64Data = CONFIG.SESSION_ID.includes(';;;') 
-          ? CONFIG.SESSION_ID.split(';;;')[1] 
-          : CONFIG.SESSION_ID;
+        const base64Data = sessionId.includes(';;;') 
+          ? sessionId.split(';;;')[1] 
+          : sessionId;
           
         const decodedCreds = Buffer.from(base64Data, 'base64').toString('utf-8');
         fs.writeFileSync(credsPath, decodedCreds);
@@ -44,7 +47,11 @@ async function startBot() {
   await loadPlugins();
   await initSession(); // Run session string processor
   
-  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+    // Safely assign a fallback path if CONFIG.SESSION_DIR or CONFIG.SESSION_ID isn't set
+  const sessionDirectory = CONFIG.SESSION_DIR || CONFIG.session_dir || 'session';
+  
+  const { state, saveCreds } = await useMultiFileAuthState(sessionDirectory);
+
   
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
