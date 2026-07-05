@@ -13,11 +13,11 @@ try {
   if (fs.existsSync(configPath)) {
     const fileContent = fs.readFileSync(configPath, 'utf8');
     
-    // Extract strings cleanly using regex matchers
+    // Upgraded string extraction regex to discard trailing comments safely
     const extractVar = (name) => {
-      const regex = new RegExp(`(?:const|let|var|export\\s+const)?\\s*${name}\\s*=\\s*['"\`]([^'"\`]+)['"\`]`);
+      const regex = new RegExp(`(?:const|let|var|export\\s+const)?\\s*${name}\\s*=\\s*['"\`]([^'"\`\\r\\n]+)['"\`]`);
       const match = fileContent.match(regex);
-      return match ? match[1] : undefined;
+      return match ? match[1].split('//')[0].trim() : undefined;
     };
 
     CONFIG = {
@@ -61,16 +61,13 @@ async function initSession() {
   }
 }
 
-
 async function startBot() {
   await loadPlugins();
   await initSession(); // Run session string processor
   
-    // Safely assign a fallback path if CONFIG.SESSION_DIR or CONFIG.SESSION_ID isn't set
-  const sessionDirectory = CONFIG.SESSION_DIR || CONFIG.session_dir || 'session';
-  
+  // Safely assign a fallback path if CONFIG.SESSION_DIR isn't set
+  const sessionDirectory = CONFIG.SESSION_DIR || 'session';
   const { state, saveCreds } = await useMultiFileAuthState(sessionDirectory);
-
   
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
@@ -107,7 +104,7 @@ async function startBot() {
     if (command) {
       try {
         const settings = getSettings(msg.key.remoteJid);
-        if (settings.antilink && text.includes('chat.whatsapp.com')) return;
+        if (settings?.antilink && text.includes('chat.whatsapp.com')) return;
 
         await command.function(sock, msg, args);
       } catch (err) {
@@ -121,22 +118,23 @@ async function startBot() {
     const { id, participants, action } = update;
     
     try {
-      // Pull targeted group tracking rules directly from your sql engine
-      const settings = getSettings(id);
+      // Pull targeted group tracking rules with fallback verification
+      const settings = (await getSettings(id)) || {};
       
       for (let user of participants) {
+        if (!user) continue;
         const cleanUserTag = `@${user.split('@')[0]}`;
 
         // Automated Entrance Alert
         if (action === 'add' && settings.welcome === 'true') {
           const welcomeMessage = `📥 **[NEW MEMBER]** 📥\n\nWelcome ${cleanUserTag} to our server layout!\n━━━━━━━━━━━━━━━━━━━━\n💬 Check the pins and enjoy your stay!`;
-          await sock.sendMessage(id, { text: welcomeMessage, mentions: [user] });
+          await sock.sendMessage(id, { text: welcomeMessage, mentions: [user] }).catch(() => {});
         }
 
         // Automated Exit Alert
         if (action === 'remove' && settings.goodbye === 'true') {
           const goodbyeMessage = `📤 **[USER EXIT]** 📤\n\n${cleanUserTag} just left the server architecture. \n━━━━━━━━━━━━━━━━━━━━\n*Press F to pay respects.*`;
-          await sock.sendMessage(id, { text: goodbyeMessage, mentions: [user] });
+          await sock.sendMessage(id, { text: goodbyeMessage, mentions: [user] }).catch(() => {});
         }
       }
     } catch (err) {
