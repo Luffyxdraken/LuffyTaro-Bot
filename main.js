@@ -107,7 +107,12 @@ async function startBot() {
         const settings = getSettings(msg.key.remoteJid);
         if (settings?.antilink && text.includes('chat.whatsapp.com')) return;
 
-        await command.function(sock, msg, args);
+        // ✅ Hybrid Compatibility layer: Runs .execute() or falls back to .function()
+        if (typeof command.execute === 'function') {
+          await command.execute({ client: sock, from: msg.key.remoteJid, msg, args, isGroup: msg.key.remoteJid.endsWith('@g.us') });
+        } else if (typeof command.function === 'function') {
+          await command.function(sock, msg, args);
+        }
       } catch (err) {
         console.error(`Error executing ${commandName}:`, err);
       }
