@@ -3,9 +3,12 @@ import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
-import CONFIG from './config.js';
+import * as CONFIG_MODULE from './config.js';
 import { loadPlugins, commands } from './lib/Handler.js';
 import { getSettings } from './sql/database.js';
+
+// ✅ PLACE IT EXACTLY HERE (Right after imports, before functions)
+const CONFIG = CONFIG_MODULE.CONFIG || CONFIG_MODULE.default || CONFIG_MODULE;
 
 // Decodes Session ID and creates the creds file if it doesn't exist
 async function initSession() {
