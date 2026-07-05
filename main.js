@@ -3,6 +3,7 @@ import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
+import express from 'express';
 import { loadPlugins, commands } from './lib/Handler.js';
 import { getSettings } from './sql/database.js';
 
@@ -143,4 +144,17 @@ async function startBot() {
   });
 }
 
+// 🌐 Render Health Check Server
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.get('/', (req, res) => {
+  res.send('🚀 LuffyTaro Bot Supervisor Node is Active and Operational!');
+});
+
+app.listen(PORT, () => {
+  console.log(`🌐 Health check server listening on port ${PORT}`);
+});
+
+// Run the core bot loop
 startBot();
