@@ -6,19 +6,38 @@ import path from 'path';
 import { loadPlugins, commands } from './lib/Handler.js';
 import { getSettings } from './sql/database.js';
 
-// 🚀 Dynamic Config Loader (Bypasses all ESM syntax compilation crashes)
+// 🚀 Native File-Based Config Parser (100% immune to ESM syntax compilation issues)
 let CONFIG = {};
 try {
-  const moduleData = await import('./config.js');
-  CONFIG = moduleData.CONFIG || moduleData.default || moduleData;
+  const configPath = path.join(process.cwd(), 'config.js');
+  if (fs.existsSync(configPath)) {
+    const fileContent = fs.readFileSync(configPath, 'utf8');
+    
+    // Extract strings cleanly using regex matchers
+    const extractVar = (name) => {
+      const regex = new RegExp(`(?:const|let|var|export\\s+const)?\\s*${name}\\s*=\\s*['"\`]([^'"\`]+)['"\`]`);
+      const match = fileContent.match(regex);
+      return match ? match[1] : undefined;
+    };
+
+    CONFIG = {
+      SESSION_ID: extractVar('SESSION_ID') || extractVar('sessionId'),
+      SESSION_DIR: extractVar('SESSION_DIR') || extractVar('sessionDir') || 'session',
+      PREFIX: extractVar('PREFIX') || extractVar('prefix') || '.'
+    };
+  }
 } catch (e) {
-  console.error('⚠️ Critical error loading configuration variables:', e.message);
+  console.error('⚠️ Configuration layout reading exception:', e.message);
 }
+
+// Fallback safety assignment 
+CONFIG.SESSION_DIR = CONFIG.SESSION_DIR || 'session';
+CONFIG.PREFIX = CONFIG.PREFIX || '.';
 
 // Decodes Session ID and creates the creds file if it doesn't exist
 async function initSession() {
-  const sessionId = CONFIG.SESSION_ID || CONFIG.session_id;
-  const sessionDirectory = CONFIG.SESSION_DIR || CONFIG.session_dir || 'session';
+  const sessionId = CONFIG.SESSION_ID;
+  const sessionDirectory = CONFIG.SESSION_DIR;
 
   if (sessionId) {
     if (!fs.existsSync(sessionDirectory)) {
