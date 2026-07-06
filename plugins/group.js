@@ -1,4 +1,4 @@
-import { registerCommand } from '../lib/plugins.js';
+import { registerCommand } from '../lib/Handler.js';
 import { updateGroupSetting, getGroupSetting } from '../lib/db.js';
 import { jidDecode } from '@whiskeysockets/baileys';
 
