@@ -81,7 +81,7 @@ async function startBot() {
     auth: state
   });
 
-  sock.ev.on('connection.update', (update) => {
+  sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
     
@@ -90,6 +90,17 @@ async function startBot() {
       if (shouldReconnect) startBot();
     } else if (connection === 'open') {
       console.log('✅ Bot successfully connected to WhatsApp via Session ID!');
+      
+      // 📲 Auto-Send Menu Alert to Owner Number on Startup
+      try {
+        const ownerNumber = "917866052212"; // 👈 REPLACE THIS WITH YOUR WHATSAPP NUMBER (e.g., "918888888888")
+        const ownerJid = `${ownerNumber}@s.whatsapp.net`;
+        
+        const liveAlert = `🚀 *LuffyTaro Bot is Live and Operational!* \n\nUse *${CONFIG.PREFIX}menu* to view your active command systems.`;
+        await sock.sendMessage(ownerJid, { text: liveAlert });
+      } catch (err) {
+        console.error('⚠️ Failed to deliver live notification alert to owner:', err.message);
+      }
     }
   });
 
