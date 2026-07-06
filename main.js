@@ -70,11 +70,11 @@ async function startBot() {
   const sessionDirectory = CONFIG.SESSION_DIR || 'session';
   const { state, saveCreds } = await useMultiFileAuthState(sessionDirectory);
   
-  const sock = makeWASocket({
+      const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
-    auth: state,
-    printQRInTerminal: !CONFIG.SESSION_ID // Only print QR if no Session ID is given
+    auth: state
   });
+
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
