@@ -62,19 +62,24 @@ async function initSession() {
   }
 }
 
+// Safeguard tracking flag to prevent duplicate command registrations
+let isPluginsLoaded = false;
+
 async function startBot() {
-  await loadPlugins();
-  await initSession(); // Run session string processor
+  if (!isPluginsLoaded) {
+    await loadPlugins();
+    await initSession(); // Run session string processor
+    isPluginsLoaded = true;
+  }
   
   // Safely assign a fallback path if CONFIG.SESSION_DIR isn't set
   const sessionDirectory = CONFIG.SESSION_DIR || 'session';
   const { state, saveCreds } = await useMultiFileAuthState(sessionDirectory);
   
-    const sock = makeWASocket({
+  const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state
   });
-
 
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
