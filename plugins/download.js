@@ -1,4 +1,5 @@
-import { registerCommand } from '../lib/plugins.js';
+import { registerCommand } from '../lib/Handler.js';
+
 import axios from 'axios';
 
 // Upgraded production-grade scraper engine utilizing alternative clean routes
