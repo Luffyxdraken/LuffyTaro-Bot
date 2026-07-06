@@ -1,4 +1,4 @@
-import { registerCommand, commands } from '../lib/plugins.js';
+import { registerCommand } from '../lib/Handler.js'; // ✅ Points to your real handler now
 import { config } from '../config.js';
 import { getSetting, setSetting } from '../lib/db.js';
 import os from 'os';
