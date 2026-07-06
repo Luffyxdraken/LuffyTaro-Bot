@@ -1,4 +1,4 @@
-import { registerCommand } from '../lib/plugins.js';
+import { registerCommand } from '../lib/Handler.js';
 import { exec } from 'child_process';
 
 registerCommand({
