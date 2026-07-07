@@ -1,4 +1,4 @@
-import { registerCommand } from '../lib/Handler.js';
+ppimport { registerCommand } from '../lib/Handler.js';
 import { updateGroupSetting, getGroupSetting } from '../lib/db.js';
 import { jidDecode } from '@whiskeysockets/baileys';
 
@@ -73,9 +73,14 @@ registerCommand({
 
         try {
             await client.groupParticipantsUpdate(from, [target], 'promote');
-            await client.sendMessage(from, { 
-                text: `✨ **RANK UP** ✨\n\n🛡️ USER: @${target.split('@')[0]}\n💼 ROLE: **Group Administrator**\n\n*Permissions updated successfully.*`, 
-                mentions: [target] 
+            await client.sendMessage(from, {
+    text: `**RANK UP** \n\n USER: @${target.split('@')[0]}\n ROLE: **Grand Admiral**`,
+    mentions: [target]
+}, { quoted: msg });
+
+```
+Try pasting this in and see if it works for you.
+
             }, { quoted: msg });
         } catch {
             await client.sendMessage(from, { text: '❌ **System Error:** Failed to modify authorization properties.' }, { quoted: msg });
@@ -99,10 +104,11 @@ registerCommand({
 
         try {
             await client.groupParticipantsUpdate(from, [target], 'demote');
-            await client.sendMessage(from, { 
-                text: `📉 **RANK DOWN** 📉\n\n👤 USER: @${target.split('@')[0]}\n💼 ROLE: **Member**`, 
-                mentions: [target] 
-            }, { quoted: msg });
+            await client.sendMessage(from, {
+    text: `**RANK UP** \n\n USER: @${target.split('@')[0]}\n ROLE: **Grand Admiral**`,
+    mentions: [target]
+}, { quoted: msg });
+            
         } catch {
             await client.sendMessage(from, { text: '❌ **System Error:** Request rejected by server layers.' }, { quoted: msg });
         }
