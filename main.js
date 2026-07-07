@@ -93,11 +93,12 @@ async function startBot() {
       
       // 📲 Auto-Send Menu Alert to Owner Number on Startup
       try {
-        const ownerNumber = "917866052212"; // 👈 REPLACE THIS WITH YOUR WHATSAPP NUMBER (e.g., "918888888888")
+        const ownerNumber = "917866052212"; 
         const ownerJid = `${ownerNumber}@s.whatsapp.net`;
         
         const liveAlert = `🚀 *LuffyTaro Bot is Live and Operational!* \n\nUse *${CONFIG.PREFIX}menu* to view your active command systems.`;
         await sock.sendMessage(ownerJid, { text: liveAlert });
+        console.log(`📡 Dispatched startup notice successfully to: ${ownerJid}`);
       } catch (err) {
         console.error('⚠️ Failed to deliver live notification alert to owner:', err.message);
       }
@@ -109,16 +110,33 @@ async function startBot() {
   // 1. CHAT MESSAGE INGESTION ROUTER
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg.message) return;
 
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    // Enhanced deep-extraction for multiple potential message body locations
+    const text = msg.message.conversation || 
+                 msg.message.extendedTextMessage?.text || 
+                 msg.message.imageMessage?.caption || 
+                 msg.message.videoMessage?.caption || '';
+
+    // 📡 Active Traffic Debugger Log
+    console.log(`📥 [TRAFFIC] Message from ${msg.key.remoteJid}: "${text}" (fromMe: ${msg.key.fromMe})`);
+
+    // Guard: Ignore if it doesn't start with your prefix
     if (!text.startsWith(CONFIG.PREFIX)) return;
+
+    // Guard: Prevent answering self-replies unless it is a valid explicit command execution string
+    if (msg.key.fromMe && text.startsWith(CONFIG.PREFIX)) {
+      // Allow execution for self-sent commands
+    } else if (msg.key.fromMe) {
+      return;
+    }
 
     const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
     const command = commands.get(commandName);
 
     if (command) {
+      console.log(`🎯 [EXECUTION] Running command: "${commandName}" for ${msg.key.remoteJid}`);
       try {
         const settings = getSettings(msg.key.remoteJid);
         if (settings?.antilink && text.includes('chat.whatsapp.com')) return;
@@ -132,6 +150,8 @@ async function startBot() {
       } catch (err) {
         console.error(`Error executing ${commandName}:`, err);
       }
+    } else {
+      console.log(`❓ [UNKNOWN] Command "${commandName}" does not match any registered map structural endpoints.`);
     }
   });
 
