@@ -3,34 +3,28 @@ import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
-import http from 'http'; // Native HTTP module to fix Render port timeouts
+import http from 'http';
 import { CONFIG } from './config.js';
 import { commands } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
-// --- FIX: Render Health Check Web Server ---
+// 1. Render Health Check Server (Runs ONCE at boot)
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('LuffyTaro Bot is running flawlessly.');
+  res.end('LuffyTaro Bot Live');
 }).listen(PORT, () => {
-  console.log(`📡 Render Health Check server listening on port ${PORT}`);
+  console.log(`📡 Render Health Check active on port ${PORT}`);
 });
-// -------------------------------------------
 
+// 2. Session Initialization Logic (Runs ONCE at boot)
 async function initSession() {
-  // FORCE RESET: Un-comment the line below ONLY if you want to completely wipe the session and start fresh
-  // if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
-
   if (CONFIG.SESSION_ID) {
-    // If the directory doesn't exist, create it clean
     if (!fs.existsSync(CONFIG.SESSION_DIR)) {
       fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
     }
-    
     const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
     
-    // Force overwrite the credentials file every deploy to make sure it uses the new environment variable
     try {
       const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
       fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
@@ -41,8 +35,8 @@ async function initSession() {
   }
 }
 
+// 3. Core Bot Connection Process
 async function startBot() {
-  await initSession();
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
   const sock = makeWASocket({
@@ -57,20 +51,26 @@ async function startBot() {
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      // Reconnect if it wasn't a deliberate logout action
-      if (statusCode !== DisconnectReason.loggedOut) {
-        console.log('🔄 Reconnecting connection...');
-        startBot();
+      const reason = lastDisconnect?.error?.message || 'No direct message reason supplied';
+      
+      console.log(`📡 Socket Closed. Code: ${statusCode} | Reason: ${reason}`);
+
+      if (statusCode === DisconnectReason.loggedOut) {
+        console.log('❌ Device logged out. Stop reconnecting.');
+        return;
       }
+
+      console.log('🔄 Reconnecting system in 5 seconds...');
+      setTimeout(() => startBot(), 5000);
+
     } else if (connection === 'open') {
       console.log('✅ Bot Online.');
-      
       try {
         const startAlert = `⚡ *LuffyTaro Bot is Active!*\n\nAll operational modules loaded. Run commands inside target management groups.`;
         await sock.sendMessage(CONFIG.OWNER, { text: startAlert });
         await commands.menu(sock, { key: { remoteJid: CONFIG.OWNER } });
       } catch (e) {
-        console.log('Could not alert owner chat directly, verify owner number format.');
+        console.log('Could not alert owner chat directly.');
       }
     }
   });
@@ -78,11 +78,7 @@ async function startBot() {
   sock.ev.on('creds.update', saveCreds);
   
   sock.ev.on('group-participants.update', async (update) => {
-    try { 
-      await handleGroupParticipants(sock, update); 
-    } catch (e) { 
-      console.error('Group Event Error:', e); 
-    }
+    try { await handleGroupParticipants(sock, update); } catch (e) { console.error(e); }
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
@@ -102,10 +98,16 @@ async function startBot() {
       try {
         await commands[targetCmd](sock, msg, args);
       } catch (err) {
-        console.error(`Execution error on command .${commandName}:`, err);
+        console.error(err);
       }
     }
   });
 }
 
-startBot();
+// Global execution sequence
+async function run() {
+  await initSession(); // Sets file once
+  await startBot();    // Loops inside its own reconnect handlers
+}
+
+run();
