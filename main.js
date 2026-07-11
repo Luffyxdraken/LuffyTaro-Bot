@@ -19,17 +19,24 @@ http.createServer((req, res) => {
 // -------------------------------------------
 
 async function initSession() {
+  // FORCE RESET: Un-comment the line below ONLY if you want to completely wipe the session and start fresh
+  // if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+
   if (CONFIG.SESSION_ID) {
-    if (!fs.existsSync(CONFIG.SESSION_DIR)) fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
+    // If the directory doesn't exist, create it clean
+    if (!fs.existsSync(CONFIG.SESSION_DIR)) {
+      fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
+    }
+    
     const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
-    if (!fs.existsSync(credsPath)) {
-      try {
-        const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
-        fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
-        console.log('✅ Session successfully imported into disk storage.');
-      } catch (err) {
-        console.error('❌ Session decoding failed:', err.message);
-      }
+    
+    // Force overwrite the credentials file every deploy to make sure it uses the new environment variable
+    try {
+      const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
+      fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
+      console.log('✅ Fresh Session ID successfully written to persistent disk.');
+    } catch (err) {
+      console.error('❌ Session decoding failed:', err.message);
     }
   }
 }
