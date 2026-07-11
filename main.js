@@ -3,9 +3,20 @@ import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
+import http from 'http'; // Native HTTP module to fix Render port timeouts
 import { CONFIG } from './config.js';
 import { commands } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
+
+// --- FIX: Render Health Check Web Server ---
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('LuffyTaro Bot is running flawlessly.');
+}).listen(PORT, () => {
+  console.log(`📡 Render Health Check server listening on port ${PORT}`);
+});
+// -------------------------------------------
 
 async function initSession() {
   if (CONFIG.SESSION_ID) {
@@ -15,7 +26,7 @@ async function initSession() {
       try {
         const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
         fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
-        console.log('✅ Session imported.');
+        console.log('✅ Session successfully imported into disk storage.');
       } catch (err) {
         console.error('❌ Session decoding failed:', err.message);
       }
@@ -38,11 +49,15 @@ async function startBot() {
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
     
     if (connection === 'close') {
-      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      // Reconnect if it wasn't a deliberate logout action
+      if (statusCode !== DisconnectReason.loggedOut) {
+        console.log('🔄 Reconnecting connection...');
+        startBot();
+      }
     } else if (connection === 'open') {
       console.log('✅ Bot Online.');
       
-      // Automatically triggers owner alert menu notification upon boot sequence completion
       try {
         const startAlert = `⚡ *LuffyTaro Bot is Active!*\n\nAll operational modules loaded. Run commands inside target management groups.`;
         await sock.sendMessage(CONFIG.OWNER, { text: startAlert });
@@ -54,8 +69,13 @@ async function startBot() {
   });
 
   sock.ev.on('creds.update', saveCreds);
+  
   sock.ev.on('group-participants.update', async (update) => {
-    try { await handleGroupParticipants(sock, update); } catch (e) { console.error(e); }
+    try { 
+      await handleGroupParticipants(sock, update); 
+    } catch (e) { 
+      console.error('Group Event Error:', e); 
+    }
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
@@ -68,7 +88,6 @@ async function startBot() {
     const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
     
-    // Explicit tracking mapping logic
     let targetCmd = commandName;
     if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
 
@@ -76,7 +95,7 @@ async function startBot() {
       try {
         await commands[targetCmd](sock, msg, args);
       } catch (err) {
-        console.error(err);
+        console.error(`Execution error on command .${commandName}:`, err);
       }
     }
   });
