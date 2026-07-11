@@ -3,12 +3,11 @@ import fs from 'fs';
 import path from 'path';
 import { CONFIG } from '../config.js';
 
-// --- FIX: Create the persistent directory if it doesn't exist yet ---
+// Fixes EACCES permissions error by creating folders inside current project workspace
 const dbDir = path.dirname(CONFIG.DATABASE_PATH);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
-// --------------------------------------------------------------------
 
 const db = new Database(CONFIG.DATABASE_PATH);
 
