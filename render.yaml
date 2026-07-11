@@ -15,5 +15,5 @@ services:
         value: ""
     disk:
       name: bot-storage
-      mountPath: /data
+      mountPath: ./data
       sizeGB: 1
