@@ -1,62 +1,85 @@
-async function startBot() {
-  if (!isPluginsLoaded) {
-    await loadPlugins();
-    await initSession(); 
-    isPluginsLoaded = true;
-  }
-  
-  const sessionDirectory = CONFIG.SESSION_DIR || 'session';
-  console.log(`📦 Initializing multi-file authentication state using path: "./${sessionDirectory}"`);
-  
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDirectory);
-  
-  // 🔄 Changed level from 'silent' to 'warn' or 'info' to catch hidden exceptions
-  const sock = makeWASocket({
-    logger: pino({ level: 'info' }), 
-    auth: state,
-    printQRInTerminal: false
-  });
+import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import pino from 'pino';
+import QRCode from 'qrcode-terminal';
+import fs from 'fs';
+import path from 'path';
+import { CONFIG } from './config.js';
+import { commands } from './plugins/commands.js';
+import { handleGroupParticipants } from './plugins/automation.js';
 
-  console.log('📡 Registering core system event listeners onto socket connection interface...');
+async function initSession() {
+  if (CONFIG.SESSION_ID) {
+    if (!fs.existsSync(CONFIG.SESSION_DIR)) fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
+    const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
+    if (!fs.existsSync(credsPath)) {
+      try {
+        const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
+        fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
+        console.log('✅ Session imported.');
+      } catch (err) {
+        console.error('❌ Session decoding failed:', err.message);
+      }
+    }
+  }
+}
+
+async function startBot() {
+  await initSession();
+  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  
+  const sock = makeWASocket({
+    logger: pino({ level: 'silent' }),
+    auth: state,
+    printQRInTerminal: !CONFIG.SESSION_ID
+  });
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-    
-    // Log EVERY single state transition explicitly
-    console.log(`⚡ [CONNECTION STATE UPDATE]: ${connection || 'processing state change...'}`);
-    
-    if (qr) {
-      console.log('⚠️ [QR CODE GENERATED]: A live Session ID was not found or has expired.');
-      QRCode.generate(qr, { small: true });
-    }
+    if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
     
     if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      console.log(`❌ Connection terminated. Reason Status Code: ${statusCode}`);
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        console.log('🔄 Re-attempting core socket boot sequence...');
-        startBot();
-      }
+      if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) startBot();
     } else if (connection === 'open') {
-      console.log('✅ Bot successfully connected to WhatsApp via Session ID!');
+      console.log('✅ Bot Online.');
       
+      // Automatically triggers owner alert menu notification upon boot sequence completion
       try {
-        const ownerNumber = "917866052212"; 
-        const ownerJid = `${ownerNumber}@s.whatsapp.net`;
-        
-        const liveAlert = `🚀 *LuffyTaro Bot is Live and Operational!* \n\nUse *${CONFIG.PREFIX}menu* to view your active command systems.`;
-        await sock.sendMessage(ownerJid, { text: liveAlert });
-        console.log(`Dispatched startup notice successfully to: ${ownerJid}`);
-      } catch (err) {
-        console.error('⚠️ Failed to deliver live notification alert to owner:', err.message);
+        const startAlert = `⚡ *LuffyTaro Bot is Active!*\n\nAll operational modules loaded. Run commands inside target management groups.`;
+        await sock.sendMessage(CONFIG.OWNER, { text: startAlert });
+        await commands.menu(sock, { key: { remoteJid: CONFIG.OWNER } });
+      } catch (e) {
+        console.log('Could not alert owner chat directly, verify owner number format.');
       }
     }
   });
 
-  sock.ev.on('creds.update', () => {
-    console.log('💾 Authentication credentials updated and synchronized to disk storage layer.');
-    saveCreds();
+  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('group-participants.update', async (update) => {
+    try { await handleGroupParticipants(sock, update); } catch (e) { console.error(e); }
   });
 
-  // Keep the rest of your messages.upsert and group router exactly the same...
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg.message || msg.key.fromMe) return;
+
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    if (!text.startsWith(CONFIG.PREFIX)) return;
+
+    const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
+    const commandName = args.shift().toLowerCase();
+    
+    // Explicit tracking mapping logic
+    let targetCmd = commandName;
+    if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
+
+    if (commands[targetCmd]) {
+      try {
+        await commands[targetCmd](sock, msg, args);
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  });
+}
+
+startBot();
