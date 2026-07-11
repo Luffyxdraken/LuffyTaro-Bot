@@ -1,5 +1,14 @@
 import Database from 'better-sqlite3';
+import fs from 'fs';
+import path from 'path';
 import { CONFIG } from '../config.js';
+
+// --- FIX: Create the persistent directory if it doesn't exist yet ---
+const dbDir = path.dirname(CONFIG.DATABASE_PATH);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+// --------------------------------------------------------------------
 
 const db = new Database(CONFIG.DATABASE_PATH);
 
@@ -23,4 +32,3 @@ export const updateConfig = (chatId, column, value) => {
     ON CONFLICT(chat_id) DO UPDATE SET ${column} = ?
   `).run(chatId, value, value);
 };
-
