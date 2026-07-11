@@ -1,4 +1,4 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode-terminal';
 import fs from 'fs';
@@ -39,12 +39,28 @@ async function initSession() {
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
+  // Fetches current WhatsApp Web version arrays dynamically to bypass 405 errors
+  let version = [2, 3000, 1017577546]; // Default fallback version
+  try {
+    const latest = await fetchLatestWaWebVersion(); 
+    if (latest && latest.version) {
+      version = latest.version;
+      console.log(`🌐 Synchronized with latest WhatsApp Web version: ${version.join('.')}`);
+    }
+  } catch (e) {
+    console.log('⚠️ Could not fetch live web version, running with updated structural fallback.');
+  }
+
+  // Socket definition utilizing dynamic versioning and browser fingerprinting
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state,
-    printQRInTerminal: !CONFIG.SESSION_ID
+    version, 
+    printQRInTerminal: !CONFIG.SESSION_ID,
+    browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0'] 
   });
 
+  // Connection State Monitor
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
@@ -75,12 +91,15 @@ async function startBot() {
     }
   });
 
+  // Credential preservation
   sock.ev.on('creds.update', saveCreds);
   
+  // Group Updates
   sock.ev.on('group-participants.update', async (update) => {
     try { await handleGroupParticipants(sock, update); } catch (e) { console.error(e); }
   });
 
+  // Message Command Handler
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
