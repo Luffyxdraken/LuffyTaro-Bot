@@ -50,7 +50,7 @@ async function startBot() {
     browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0']
   });
 
-  // 🕒 15-Minute Auto-Poster Background Loop
+  // 🕒 15-Minute Auto-Poster Background Loop (Runs in authorized announcement groups)
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
@@ -96,56 +96,80 @@ async function startBot() {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    // 🛡️ Loop Preventer Guard
+    
+    // 🛡️ GUARD 1: Drop empty values and make sure the bot NEVER triggers on its own text
     if (!msg.message || msg.key.fromMe) return;
 
     const sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
-    if (!isGroup) {
-      const lowerText = text.toLowerCase().trim();
-      
-      if (lowerText === 'help' || lowerText === 'menu' || lowerText.includes('problem') || lowerText.includes('issue')) {
-        // Intercept help or menu in private text
-        if (text.startsWith(CONFIG.PREFIX)) {
-          const commandName = text.slice(CONFIG.PREFIX.length).trim().split(/ +/)[0].toLowerCase();
-          if (commandName === 'menu' || commandName === 'help') {
-            await commands.menu(sock, msg);
-            return;
-          }
+    // 🛡️ GUARD 2: GROUP CHAT LOGIC
+    if (isGroup) {
+      // In groups, the bot ONLY listens if an admin runs a command starting with the prefix "."
+      if (!text.startsWith(CONFIG.PREFIX)) return;
+
+      const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
+      const commandName = args.shift().toLowerCase();
+      let targetCmd = commandName;
+      if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
+
+      if (commands[targetCmd]) {
+        try {
+          await commands[targetCmd](sock, msg, args, text);
+        } catch (err) {
+          console.error(err);
         }
-        await commands.handleHelpRequest(sock, msg, sender, text);
-        return;
       }
+      return; // Stop execution here. Group messages NEVER slide down into the AI chatbot filters below.
+    }
 
-      if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
-        await commands.handleGuidelineRequest(sock, msg);
-        return;
-      }
-
-      if (lowerText.includes('free match') || lowerText.includes('free slot')) {
-        await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *PIRATES PAID SCRIMS*\n\nHello player! Free promotional match slots are organized periodically. Stay tuned to our official main group for announcements!` });
-        return;
-      }
-
-      if (!text.startsWith(CONFIG.PREFIX)) {
-        const activeMatch = getActiveMatch();
-        if (activeMatch) {
-          await commands.handleTournamentPitch(sock, msg);
-          return;
-        } else {
-          await commands.handleAiFallback(sock, msg, text);
+    // 🛡️ GUARD 3: PRIVATE CHAT (DM) HELPLINE & CHATBOT SYSTEM
+    // This code runs exclusively when players write messages in a one-on-one private DM.
+    const lowerText = text.toLowerCase().trim();
+    
+    // Help & Support Router
+    if (lowerText === 'help' || lowerText === 'menu' || lowerText.includes('problem') || lowerText.includes('issue')) {
+      if (text.startsWith(CONFIG.PREFIX)) {
+        const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
+        const commandName = args.shift().toLowerCase();
+        if (commandName === 'menu' || commandName === 'help') {
+          await commands.menu(sock, msg);
           return;
         }
+      }
+      // If a regular user sends "help" as text, initialize support tracking
+      await commands.handleHelpRequest(sock, msg, sender, text);
+      return;
+    }
+
+    // Guidelines request router
+    if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
+      await commands.handleGuidelineRequest(sock, msg);
+      return;
+    }
+
+    // Free slot check filter
+    if (lowerText.includes('free match') || lowerText.includes('free slot')) {
+      await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *PIRATES PAID SCRIMS*\n\nHello player! Free promotional match slots are organized periodically. Stay tuned to our official main group for announcements!` });
+      return;
+    }
+
+    // Private AI Fallback Response Strategy
+    if (!text.startsWith(CONFIG.PREFIX)) {
+      const activeMatch = getActiveMatch();
+      if (activeMatch) {
+        await commands.handleTournamentPitch(sock, msg);
+        return;
+      } else {
+        await commands.handleAiFallback(sock, msg, text);
+        return;
       }
     }
 
-    if (!text.startsWith(CONFIG.PREFIX)) return;
-
+    // Executing explicit prefix commands inside private messages
     const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
-    
     let targetCmd = commandName;
     if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
 
