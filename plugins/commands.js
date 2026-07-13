@@ -45,6 +45,49 @@ export function verifyAuthority(senderJid, requireRoot = false) {
 }
 
 export const commands = {
+  // ⚡ ONE-TIME INSTANT LOOP TEST COMMAND
+  testpost: async (sock, msg) => {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    if (!verifyAuthority(sender)) return;
+
+    const targetGroupIds = Array.from(authorizedPosterGroups);
+    if (targetGroupIds.length === 0) {
+      return await sock.sendMessage(msg.key.remoteJid, { 
+        text: "⚠️ *Test Failed:* No auto-post groups are active right now. Run `.active [Group Link]` first!" 
+      });
+    }
+
+    const currentAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
+    const testLobbyMessage = `🏴‍☠️ *10x PP LOBBY [MANUAL TEST]* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n> PIRATES CS LOBBY \n* *ENTRY - 30/50/100 RS*\n* *PP - 60 /100/180 RS*\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n \n> PIRATES PAID SCRIMS\n\n\`BENEFIT\`\n*HIGHEST PP IN* \`COMMUNITY\`\n*PP CLEAR IN* \`10\` *MIN*\n\n*_DM  +${currentAdmin} FOR SLOTS_* 🔥`;
+
+    await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching 1-time test broadcast to ${targetGroupIds.length} groups...` });
+
+    for (const groupId of targetGroupIds) {
+      try {
+        await sock.sendMessage(groupId, { text: testLobbyMessage });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    await sock.sendMessage(msg.key.remoteJid, { text: "✅ *Test Broadcast Dispatched successfully.*" });
+  },
+
+  check: async (sock, msg) => {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    if (!verifyAuthority(sender)) return;
+
+    const currentHub = mainGroupJid || CONFIG.MAIN_GROUP_JID || "None Assigned";
+    const broadcastTargets = Array.from(authorizedPosterGroups);
+    
+    let report = `📊 *LuffyTaro System Status Check*\n───────────────────────────\n\n🎯 *Main Community Hub:* \n\`${currentHub}\`\n\n🔗 *Official Hub Link:* \n${CONFIG.MAIN_GROUP_INVITE_LINK}\n\n📢 *Active Auto-Post Channels:* ${broadcastTargets.length === 0 ? '_None registered._' : ''}\n`;
+    
+    broadcastTargets.forEach((id, i) => {
+      report += `👉 Room [${i + 1}]: \`${id}\`\n`;
+    });
+
+    await sock.sendMessage(msg.key.remoteJid, { text: report });
+  },
+
   addadmin: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender, true)) return;
@@ -223,16 +266,18 @@ export const commands = {
     if (verifyAuthority(sender)) {
       const masterDashboard = `🏴‍☠️ *LUFFYTARO PIRATES MASTER COMMAND DIRECTORY* 🏴‍☠️
 
-👑 *SECURITY COMMANDS (Master Owner Only)*
+👑 *SECURITY COMMANDS*
 • \`.addadmin [Phone]\` - Authorizes a new sub-admin number.
 • \`.deladmin [Phone]\` - Instantly strips a sub-admin's clearance.
 • \`.listadmins\` - View all active admins.
 
 📍 *SYNC ANCHORS*
 • \`.setmaingroup\` - Sets current room as main community hub.
+• \`.check\` - Diagnoses and prints current running configuration.
 
 📢 *BROADCAST LOOP CONTROL*
 • \`.active [Group Link]\` - Whitelists a group for the 15-minute background auto-poster.
+• \`.testpost\` - Fires a 1-time manual post to verify loop transmission.
 • \`.deactive\` - Stops auto-posting inside the target group chat.
 
 🏆 *SCRIMS AUTOMATION*
@@ -263,11 +308,11 @@ _Official Main Hub Invite Link:_
     if (!activeMatchStaging) return;
     const currentOnDutyAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
 
-    const pitchCaptionText = `🔥 *PIRATES TOURNAMENT IS LIVE NOW!* 🔥\n───────────────────────────\n🏆 *Active Event:* ${activeMatchStaging.eventName}\n🆔 *Match Register ID:* ${activeMatchStaging.matchId}\n\n🏴‍☠️ *HOW TO JOIN & REGISTER:*\n1️⃣ Join our Main Hub Group:\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\n2️⃣ DM our active shift manager to lock slots:\n👉 wa.me/${currentOnDutyAdmin}`;
+    const pitchDynamicText = `🔥 *PIRATES TOURNAMENT IS LIVE NOW!* 🔥\n───────────────────────────\n🏆 *Active Event:* ${activeMatchStaging.eventName}\n🆔 *Match Register ID:* ${activeMatchStaging.matchId}\n\n🏴‍☠️ *HOW TO JOIN & REGISTER:*\n1️⃣ Join our Main Hub Group:\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\n2️⃣ DM our active shift manager to lock slots:\n👉 wa.me/${currentOnDutyAdmin}`;
 
     await sock.sendMessage(msg.key.remoteJid, {
       image: { url: dynamicPresets.pirates_paid_scrim.imageUrl },
-      caption: pitchCaptionText
+      caption: pitchDynamicText
     });
   },
 
