@@ -3,7 +3,7 @@ import { CONFIG } from '../config.js';
 let adminList = new Set([
   "917866052212", 
   "919158210010", 
-  "919954865200"    
+  "9954865200"    
 ]); 
 
 let activeMatchStaging = null;
