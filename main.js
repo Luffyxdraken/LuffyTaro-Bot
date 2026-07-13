@@ -100,14 +100,12 @@ async function startBot() {
           try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
           return;
         } else {
-          // Denies access if unauthorized numbers try triggering master commands
           await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${sender.split('@')[0]}\`) does not hold admin clearance tags.` });
           return;
         }
       }
     }
 
-    // Isolate structural processing inside group feeds
     if (isGroup) return;
 
     // 🛡️ 2. GATEKEEPER COMMUNITY ACCESS VALIDATION
@@ -120,7 +118,7 @@ async function startBot() {
         userIsInMainGroup = true;
       }
     } else {
-      userIsInMainGroup = true; // Admins skip verification entirely
+      userIsInMainGroup = true; 
     }
 
     if (!userIsInMainGroup) {
@@ -144,7 +142,6 @@ async function startBot() {
       return;
     }
 
-    // Handle conversational contexts dynamically via the AI engine
     await commands.handleAiFallback(sock, msg, text);
   });
 }
