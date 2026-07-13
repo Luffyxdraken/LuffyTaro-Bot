@@ -1,6 +1,5 @@
 import { CONFIG } from '../config.js';
 
-// 🛡️ Explicitly whitelisting your number in the array to guarantee access
 let adminList = new Set([
   "917866052212", 
   "919158210010", 
@@ -8,7 +7,7 @@ let adminList = new Set([
 ]); 
 
 let activeMatchStaging = null;
-let mainGroupJid = null; 
+let mainGroupJid = CONFIG.MAIN_GROUP_JID || null; 
 let authorizedPosterGroups = new Set(); 
 
 let dynamicPresets = {
@@ -35,7 +34,7 @@ export function getActiveAdminForTime() {
 export function getActiveMatch() { return activeMatchStaging; }
 export function getAuthorizedPosterGroups() { return Array.from(authorizedPosterGroups); }
 
-function verifyAuthority(senderJid, requireRoot = false) {
+export function verifyAuthority(senderJid, requireRoot = false) {
   if (!senderJid) return false;
   const dynamicCleanNum = senderJid.split('@')[0].replace(/[^0-9]/g, '');
   const rootCleanNum = CONFIG.OWNER.split('@')[0].replace(/[^0-9]/g, '');
@@ -163,9 +162,10 @@ export const commands = {
 
     try {
       let mainParticipants = [];
-      if (mainGroupJid) {
+      const checkJid = mainGroupJid || CONFIG.MAIN_GROUP_JID;
+      if (checkJid) {
         try {
-          const mainMeta = await sock.groupMetadata(mainGroupJid);
+          const mainMeta = await sock.groupMetadata(checkJid);
           mainParticipants = mainMeta.participants.map(p => p.id);
         } catch (e) {
           console.log("Could not pull current live metadata, defaulting safely.");
@@ -252,7 +252,7 @@ Need support or looking to register for open slots? Use the casual keyword optio
 📞 *ACTIVE MANAGEMENT LINE:*
 • Support Helpline: wa.me/${currentOnDutyAdmin}
 
-_Ensure you stay locked into our official main announcement group chats for daily room slots and dynamic prize pool drops!_
+_Official Main Hub Invite Link:_
 👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
       
       await sock.sendMessage(msg.key.remoteJid, { text: playerDashboard });
