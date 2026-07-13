@@ -37,14 +37,22 @@ async function startBot() {
     if (latest && latest.version) version = latest.version;
   } catch (e) {}
 
-  const sock = makeWASocket({
+    const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state,
-    version,
+    version: [2, 3000, 1017577546],
     printQRInTerminal: !CONFIG.SESSION_ID,
-    browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
+    // Change these 3 lines:
+    browser: ['Chrome', 'Windows', '10.0.0'], 
+    patchMessageBeforeSending: (msg) => {
+        const needsPatch = !!(msg.buttonsMessage || msg.templateMessage || msg.listMessage);
+        if (needsPatch) {
+            msg = { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} }, ...msg } } };
+        }
+        return msg;
+    }
   });
-
+  
   // 🕒 Automated 15-Minute Broadcast Loop
   setInterval(async () => {
     try {
