@@ -50,7 +50,7 @@ async function startBot() {
     browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0']
   });
 
-  // 🕒 15-Minute Auto-Poster Background Loop (Runs in authorized announcement groups)
+  // 🕒 15-Minute Auto-Poster Background Loop
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
@@ -97,18 +97,15 @@ async function startBot() {
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     
-    // 🛡️ GUARD 1: Drop empty values and make sure the bot NEVER triggers on its own text
+    // 🛡️ GUARD 1: Clear empty flags and stop the bot from processing its own actions
     if (!msg.message || msg.key.fromMe) return;
 
     const sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
-    // 🛡️ GUARD 2: GROUP CHAT LOGIC
-    if (isGroup) {
-      // In groups, the bot ONLY listens if an admin runs a command starting with the prefix "."
-      if (!text.startsWith(CONFIG.PREFIX)) return;
-
+    // 🔥 RULE 1: IF IT HAS A DOT PREFIX, EXECUTE COMMAND IMMEDIATELY (DM OR GROUP)
+    if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
       let targetCmd = commandName;
@@ -120,65 +117,38 @@ async function startBot() {
         } catch (err) {
           console.error(err);
         }
+        return; // Complete execution safely
       }
-      return; // Stop execution here. Group messages NEVER slide down into the AI chatbot filters below.
     }
 
-    // 🛡️ GUARD 3: PRIVATE CHAT (DM) HELPLINE & CHATBOT SYSTEM
-    // This code runs exclusively when players write messages in a one-on-one private DM.
+    // 🔥 RULE 2: IF IT IS IN A GROUP AND NOT A COMMAND, IGNORE COMPLETELY
+    if (isGroup) return;
+
+    // 🔥 RULE 3: PRIVATE CHAT HELPLINE SYSTEM (NO PREFIXES REQUIRED)
     const lowerText = text.toLowerCase().trim();
     
-    // Help & Support Router
+    // Hard Keywords Filter
     if (lowerText === 'help' || lowerText === 'menu' || lowerText.includes('problem') || lowerText.includes('issue')) {
-      if (text.startsWith(CONFIG.PREFIX)) {
-        const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
-        const commandName = args.shift().toLowerCase();
-        if (commandName === 'menu' || commandName === 'help') {
-          await commands.menu(sock, msg);
-          return;
-        }
-      }
-      // If a regular user sends "help" as text, initialize support tracking
       await commands.handleHelpRequest(sock, msg, sender, text);
       return;
     }
 
-    // Guidelines request router
     if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
       await commands.handleGuidelineRequest(sock, msg);
       return;
     }
 
-    // Free slot check filter
     if (lowerText.includes('free match') || lowerText.includes('free slot')) {
       await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *PIRATES PAID SCRIMS*\n\nHello player! Free promotional match slots are organized periodically. Stay tuned to our official main group for announcements!` });
       return;
     }
 
-    // Private AI Fallback Response Strategy
-    if (!text.startsWith(CONFIG.PREFIX)) {
-      const activeMatch = getActiveMatch();
-      if (activeMatch) {
-        await commands.handleTournamentPitch(sock, msg);
-        return;
-      } else {
-        await commands.handleAiFallback(sock, msg, text);
-        return;
-      }
-    }
-
-    // Executing explicit prefix commands inside private messages
-    const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
-    const commandName = args.shift().toLowerCase();
-    let targetCmd = commandName;
-    if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
-
-    if (commands[targetCmd]) {
-      try {
-        await commands[targetCmd](sock, msg, args, text);
-      } catch (err) {
-        console.error(err);
-      }
+    // Default Chatbot Text Intercept Flow
+    const activeMatch = getActiveMatch();
+    if (activeMatch) {
+      await commands.handleTournamentPitch(sock, msg);
+    } else {
+      await commands.handleAiFallback(sock, msg, text);
     }
   });
 }
