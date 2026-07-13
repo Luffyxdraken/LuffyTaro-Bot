@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js';
-import { commands, getActiveAdminForTime, getActiveMatch } from './plugins/commands.js';
+import { commands, getActiveAdminForTime, getActiveMatch, getAuthorizedPosterGroups } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
 const PORT = process.env.PORT || 3000;
@@ -50,18 +50,24 @@ async function startBot() {
     browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0']
   });
 
-  // 🕒 15-Minute Auto-Poster Background Loop
+  // 🕒 15-Minute Auto-Poster Background Loop (Updated to targeted list only)
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return;
 
+      const targetGroupIds = getAuthorizedPosterGroups();
+      if (targetGroupIds.length === 0) return; // Skip if no groups are set to active yet
+
       const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n> PIRATES CS LOBBY \n* *ENTRY - 30/50/100 RS*\n* *PP - 60 /100/180 RS*\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n \n> PIRATES PAID SCRIMS\n\n\`BENEFIT\`\n*HIGHEST PP IN* \`COMMUNITY\`\n*PP CLEAR IN* \`10\` *MIN*\n\n*_DM  +${activeAdmin} FOR SLOTS_* 🔥`;
 
-      const chats = await sock.groupFetchAllParticipating();
-      for (const groupId of Object.keys(chats)) {
-        await sock.sendMessage(groupId, { text: lobbyMessage });
-        await new Promise(resolve => setTimeout(resolve, 1500));
+      for (const groupId of targetGroupIds) {
+        try {
+          await sock.sendMessage(groupId, { text: lobbyMessage });
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        } catch (err) {
+          console.error(`Could not post to authorized group ${groupId}:`, err.message);
+        }
       }
     } catch (err) {
       console.error("⚠️ Scheduler issue:", err.message);
@@ -96,7 +102,6 @@ async function startBot() {
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
-    // 📩 Handle Conversational Triggers in Private Messages
     if (!isGroup) {
       const lowerText = text.toLowerCase().trim();
       
@@ -115,22 +120,18 @@ async function startBot() {
         return;
       }
 
-      // 🤖 Interactive Tournament Inbound Logic for Casual DMs ("hi", "hello", or questions)
       if (!text.startsWith(CONFIG.PREFIX)) {
         const activeMatch = getActiveMatch();
         if (activeMatch) {
-          // If a tournament is active, automatically intercept the message and pitch the registration details!
           await commands.handleTournamentPitch(sock, msg);
           return;
         } else {
-          // Default AI Catch-all
           await commands.handleAiFallback(sock, msg, text);
           return;
         }
       }
     }
 
-    // 🛠️ Command Prefix Handler (.help, .send, etc.)
     if (!text.startsWith(CONFIG.PREFIX)) return;
 
     const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
