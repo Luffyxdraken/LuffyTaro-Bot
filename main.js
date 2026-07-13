@@ -108,22 +108,38 @@ async function startBot() {
 
     if (isGroup) return;
 
-    // 🛡️ 2. GATEKEEPER COMMUNITY ACCESS VALIDATION
+    // 🛡️ 2. STRICT GATEKEEPER COMMUNITY ACCESS VALIDATION
     let userIsInMainGroup = false;
-    if (!isOwnerOrAdmin && CONFIG.MAIN_GROUP_JID) {
-      try {
-        const metadata = await sock.groupMetadata(CONFIG.MAIN_GROUP_JID);
-        userIsInMainGroup = metadata.participants.some(p => p.id.split('@')[0].split(':')[0] === sender.split('@')[0].split(':')[0]);
-      } catch (e) {
-        userIsInMainGroup = true;
+    
+    if (!isOwnerOrAdmin) {
+      const targetCheckHub = CONFIG.MAIN_GROUP_JID || "None";
+      
+      if (targetCheckHub && targetCheckHub !== "None") {
+        try {
+          // Force fetch the live community roster directly from WhatsApp
+          const metadata = await sock.groupMetadata(targetCheckHub);
+          const cleanSenderId = sender.split('@')[0].split(':')[0];
+          
+          userIsInMainGroup = metadata.participants.some(p => {
+            const cleanParticipantId = p.id.split('@')[0].split(':')[0];
+            return cleanParticipantId === cleanSenderId;
+          });
+        } catch (e) {
+          // If the group doesn't exist or isn't loaded yet, default to false to protect your gate
+          userIsInMainGroup = false;
+        }
+      } else {
+        // If no main group ID is assigned yet, allow chatting
+        userIsInMainGroup = true; 
       }
     } else {
-      userIsInMainGroup = true; 
+      userIsInMainGroup = true; // Admins skip verification entirely
     }
 
+    // 🚫 REJECTION ACTION FOR EXTERNAL PLAYERS
     if (!userIsInMainGroup) {
-      const rejectionText = `⚠️ *ACCESS DENIED* ⚠️\n\nYou must enter our community channel first!\n\n👉 *Join here:* ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
-      await sock.sendMessage(msg.key.remoteJid, { text: rejectionText });
+      const customJoinAlert = `❌ *ACCESS DENIED* ❌\n───────────────────────────\n\nSorry, you are not a member of *Pirates Scrims* yet!\n\nTo interact with the bot engine, view guidelines, or reserve open slots, you must be part of our official main community hub.\n\n🔗 *Click here to join Pirates Scrims:* \n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\n_Once you have joined the group, try messaging the bot again!_`;
+      await sock.sendMessage(msg.key.remoteJid, { text: customJoinAlert });
       return;
     }
 
