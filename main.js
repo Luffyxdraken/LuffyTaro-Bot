@@ -11,22 +11,20 @@ import { handleGroupParticipants } from './plugins/automation.js';
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('LuffyTaro Bot Live');
+  res.end('LuffyTaro Bot System Online');
 }).listen(PORT, () => {
-  console.log(`📡 Render Health Check active on port ${PORT}`);
+  console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
 });
 
 async function initSession() {
   if (CONFIG.SESSION_ID) {
-    if (!fs.existsSync(CONFIG.SESSION_DIR)) {
-      fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
-    }
+    if (!fs.existsSync(CONFIG.SESSION_DIR)) fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
     const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
     try {
       const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
       fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
     } catch (err) {
-      console.error('❌ Session decoding failed:', err.message);
+      console.error('❌ Emergency Session Restore Failure:', err.message);
     }
   }
 }
@@ -44,31 +42,25 @@ async function startBot() {
     auth: state,
     version,
     printQRInTerminal: !CONFIG.SESSION_ID,
-    browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0']
+    browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 15-Minute Auto-Poster Background Loop
+  // 🕒 Automated 15-Minute Broadcast Loop
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return;
-
       const targetGroupIds = getAuthorizedPosterGroups();
-      if (targetGroupIds.length === 0) return; 
+      if (targetGroupIds.length === 0) return;
 
-      const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n> PIRATES CS LOBBY \n* *ENTRY - 30/50/100 RS*\n* *PP - 60 /100/180 RS*\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n \n> PIRATES PAID SCRIMS\n\n\`BENEFIT\`\n*HIGHEST PP IN* \`COMMUNITY\`\n*PP CLEAR IN* \`10\` *MIN*\n\n*_DM  +${activeAdmin} FOR SLOTS_* 🔥`;
-
+      const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™*\n\n> ENTRY - 30/50/100 RS\n> PP - 60 /100/180 RS\n\n*_DM  +${activeAdmin} FOR SLOTS_* 🔥`;
       for (const groupId of targetGroupIds) {
         try {
           await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        } catch (err) {
-          console.error(`Could not post to group ${groupId}:`, err.message);
-        }
+          await new Promise(r => setTimeout(r, 1500));
+        } catch (e) {}
       }
-    } catch (err) {
-      console.error("⚠️ Scheduler issue:", err.message);
-    }
+    } catch (err) {}
   }, 15 * 60 * 1000);
 
   sock.ev.on('connection.update', async (update) => {
@@ -94,68 +86,66 @@ async function startBot() {
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
-    if (sock.user && sock.user.id && sender.includes(sock.user.id.split(':')[0])) return;
+    if (!text) return;
+    const isOwnerOrAdmin = verifyAuthority(sender);
 
-    // 🔥 RULE 1: PREFIX COMMAND OVERRIDE (DM OR GROUP)
+    // ⚡ 1. COMMAND PROCESSING PIPELINE
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
       let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
 
       if (commands[targetCmd]) {
-        try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
-        return;
+        if (isOwnerOrAdmin) {
+          try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+          return;
+        } else {
+          // Denies access if unauthorized numbers try triggering master commands
+          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${sender.split('@')[0]}\`) does not hold admin clearance tags.` });
+          return;
+        }
       }
     }
 
+    // Isolate structural processing inside group feeds
     if (isGroup) return;
 
-    // 🛡️ GATEKEEPER CHECK: Is this user allowed to talk to the bot?
-    const isOwnerOrAdmin = verifyAuthority(sender);
+    // 🛡️ 2. GATEKEEPER COMMUNITY ACCESS VALIDATION
     let userIsInMainGroup = false;
-
     if (!isOwnerOrAdmin && CONFIG.MAIN_GROUP_JID) {
       try {
         const metadata = await sock.groupMetadata(CONFIG.MAIN_GROUP_JID);
-        userIsInMainGroup = metadata.participants.some(p => p.id === sender);
+        userIsInMainGroup = metadata.participants.some(p => p.id.split('@')[0].split(':')[0] === sender.split('@')[0].split(':')[0]);
       } catch (e) {
         userIsInMainGroup = true;
       }
     } else {
-      userIsInMainGroup = true; 
+      userIsInMainGroup = true; // Admins skip verification entirely
     }
 
-    // 🚫 REJECTION FLOW: Player is NOT in your main announcement group
     if (!userIsInMainGroup) {
-      const rejectionText = `⚠️ *ACCESS DENIED* ⚠️\n\nYou are not a verified member of our community platform.\n\n👉 *Please join our official group using this link first:* ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\nOnce joined, you can message the bot engine freely!`;
+      const rejectionText = `⚠️ *ACCESS DENIED* ⚠️\n\nYou must enter our community channel first!\n\n👉 *Join here:* ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
       await sock.sendMessage(msg.key.remoteJid, { text: rejectionText });
       return;
     }
 
-    // 🔓 APPROVED FLOW: Player is in the group or is an authorized admin
+    // 🔓 3. CONVERSATIONAL TEXT DISTRIBUTOR
     const lowerText = text.toLowerCase().trim();
     
-    if (lowerText === 'help' || lowerText === 'menu' || lowerText.includes('problem') || lowerText.includes('issue')) {
-      await commands.handleHelpRequest(sock, msg, sender, text);
-      return;
-    }
-
     if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
-      await commands.handleGuidelineRequest(sock, msg);
+      try { await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *PIRATES TOURNAMENT RULES*\n\n1. Play fair and cleanly.\n2. Payout processing takes 10 minutes max.\n3. Report anomalies directly via the *help* utility." }); } catch (e) {}
       return;
     }
 
-    if (lowerText.includes('free match') || lowerText.includes('free slot')) {
-      await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *PIRATES PAID SCRIMS*\n\nHello player! Free promotional match slots are organized periodically. Stay tuned to our official main group for announcements!` });
+    if (lowerText === 'help' || lowerText.includes('problem') || lowerText.includes('issue')) {
+      const systemAdminNode = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
+      await sock.sendMessage(msg.key.remoteJid, { text: `🛠️ *SUPPORT TICKET OPENED*\n\nYour alert has been received. Our active shift manager will contact you shortly!` });
+      await sock.sendMessage(`${systemAdminNode}@s.whatsapp.net`, { text: `🚨 *URGENT SUPPORT TICKET*\n📱 *User:* wa.me/${sender.split('@')[0].split(':')[0]}\n📝 *Text:* "${text}"` });
       return;
     }
 
-    const activeMatch = getActiveMatch();
-    if (activeMatch) {
-      await commands.handleTournamentPitch(sock, msg);
-    } else {
-      await commands.handleAiFallback(sock, msg, text);
-    }
+    // Handle conversational contexts dynamically via the AI engine
+    await commands.handleAiFallback(sock, msg, text);
   });
 }
 
