@@ -5,19 +5,19 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js';
-import { commands } from './plugins/commands.js';
+import { commands, getActiveAdminForTime } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
-// 1. Render Health Check Server (Runs ONCE at boot)
+// 1. Render Health Check Server
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('LuffyTaro Bot Live');
+  res.end('Pirates Paid Scrims Bot Live');
 }).listen(PORT, () => {
   console.log(`📡 Render Health Check active on port ${PORT}`);
 });
 
-// 2. Session Initialization Logic (Runs ONCE at boot)
+// 2. Session Initialization Logic
 async function initSession() {
   if (CONFIG.SESSION_ID) {
     if (!fs.existsSync(CONFIG.SESSION_DIR)) {
@@ -39,8 +39,7 @@ async function initSession() {
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
-  // Fetches current WhatsApp Web version arrays dynamically to bypass 405 errors
-  let version = [2, 3000, 1017577546]; // Default fallback version
+  let version = [2, 3000, 1017577546]; 
   try {
     const latest = await fetchLatestWaWebVersion(); 
     if (latest && latest.version) {
@@ -48,19 +47,55 @@ async function startBot() {
       console.log(`🌐 Synchronized with latest WhatsApp Web version: ${version.join('.')}`);
     }
   } catch (e) {
-    console.log('⚠️ Could not fetch live web version, running with updated structural fallback.');
+    console.log('⚠️ Running with web version structural fallback.');
   }
 
-  // Socket definition utilizing dynamic versioning and browser fingerprinting
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state,
     version, 
     printQRInTerminal: !CONFIG.SESSION_ID,
-    browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0'] 
+    browser: ['Pirates Paid Scrims', 'Chrome', '1.0.0'] 
   });
 
-  // Connection State Monitor
+  // 🕒 15-Minute Auto Poster Background Loop Setup
+  setInterval(async () => {
+    try {
+      const activeAdmin = getActiveAdminForTime();
+      if (!activeAdmin) return; // Silent if outside our scheduled matching windows
+
+      const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* *
+*PIRATES™* 🇮🇳
+> 6 PM PAID CS LOBBY 📌
+
+> PIRATES CS LOBBY 
+* *ENTRY - 30/50/100 RS*
+* *PP - 60 /100/180 RS*
+
+_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_
+ 
+> PIRATES PAID SCRIMS
+
+\`BENEFIT\`
+*HIGHEST PP IN* \`COMMUNITY\`
+*PP CLEAR IN* \`10\` *MIN*
+
+*_DM  +${activeAdmin} FOR SLOTS_* 🔥`;
+
+      // Fetch all chats or groups to safely broadcast to target spaces
+      const chats = await sock.groupFetchAllParticipating();
+      const targetGroupIds = Object.keys(chats);
+
+      for (const groupId of targetGroupIds) {
+        await sock.sendMessage(groupId, { text: lobbyMessage });
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1-second delay to protect against carrier bans
+      }
+      console.log(`📢 Auto-posted 15-min update lobby details containing active admin phone node: +${activeAdmin}`);
+    } catch (err) {
+      console.error("⚠️ Background scheduler iteration encountered an anomaly:", err.message);
+    }
+  }, 15 * 60 * 1000); // Evaluates exactly every 15 minutes
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
@@ -80,42 +115,63 @@ async function startBot() {
       setTimeout(() => startBot(), 5000);
 
     } else if (connection === 'open') {
-      console.log('✅ Bot Online.');
+      console.log('✅ Bot Online under Pirates Paid Scrims framework.');
       try {
-        const startAlert = `⚡ *LuffyTaro Bot is Active!*\n\nAll operational modules loaded. Run commands inside target management groups.`;
+        const startAlert = `⚡ *Pirates Paid Scrims Bot Engine Active!*\n\nAll operational structural modules successfully mounted. Engine running stable.`;
         await sock.sendMessage(CONFIG.OWNER, { text: startAlert });
-        await commands.menu(sock, { key: { remoteJid: CONFIG.OWNER } });
       } catch (e) {
         console.log('Could not alert owner chat directly.');
       }
     }
   });
 
-  // Credential preservation
   sock.ev.on('creds.update', saveCreds);
   
-  // Group Updates
   sock.ev.on('group-participants.update', async (update) => {
     try { await handleGroupParticipants(sock, update); } catch (e) { console.error(e); }
   });
 
-  // Message Command Handler
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const isGroup = msg.key.remoteJid.endsWith('@g.us');
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
+
+    // Non-prefix handling logic for Customer Help requests or guideline queries inside DMs
+    if (!isGroup) {
+      const lowerText = text.toLowerCase().trim();
+      
+      if (lowerText === 'help' || lowerText.includes('problem') || lowerText.includes('issue')) {
+        if (commands.handleHelpRequest) {
+          await commands.handleHelpRequest(sock, msg, sender, text);
+          return;
+        }
+      }
+
+      if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
+        if (commands.handleGuidelineRequest) {
+          await commands.handleGuidelineRequest(sock, msg);
+          return;
+        }
+      }
+
+      if (lowerText.includes('free match') || lowerText.includes('free slot')) {
+        const freeMatchResponse = `🏴‍☠️ *PIRATES PAID SCRIMS* 🏴‍☠️\n\nHello player! Please note that *free promotional match slots are organized periodically by the administration.* \n\nKeep a close watch on our official broadcast channels and groups for direct announcements regarding upcoming promotional slots!`;
+        await sock.sendMessage(msg.key.remoteJid, { text: freeMatchResponse });
+        return;
+      }
+    }
+
     if (!text.startsWith(CONFIG.PREFIX)) return;
 
     const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
     const commandName = args.shift().toLowerCase();
-    
-    let targetCmd = commandName;
-    if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
 
-    if (commands[targetCmd]) {
+    if (commands[commandName]) {
       try {
-        await commands[targetCmd](sock, msg, args);
+        await commands[commandName](sock, msg, args);
       } catch (err) {
         console.error(err);
       }
@@ -123,10 +179,9 @@ async function startBot() {
   });
 }
 
-// Global execution sequence
 async function run() {
-  await initSession(); // Sets file once
-  await startBot();    // Loops inside its own reconnect handlers
+  await initSession();
+  await startBot();   
 }
 
 run();
