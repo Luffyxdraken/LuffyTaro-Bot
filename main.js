@@ -4,7 +4,7 @@ import QRCode from 'qrcode-terminal';
 import fs from 'fs';
 import path from 'path';
 import http from 'http';
-import { CONFIG } from './config.js';
+import { CONFIG } from './config.js'; 
 import { commands, getActiveAdminForTime, getActiveMatch, getAuthorizedPosterGroups, verifyAuthority } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
@@ -94,6 +94,8 @@ async function startBot() {
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
+    if (sock.user && sock.user.id && sender.includes(sock.user.id.split(':')[0])) return;
+
     // 🔥 RULE 1: PREFIX COMMAND OVERRIDE (DM OR GROUP)
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
@@ -117,11 +119,10 @@ async function startBot() {
         const metadata = await sock.groupMetadata(CONFIG.MAIN_GROUP_JID);
         userIsInMainGroup = metadata.participants.some(p => p.id === sender);
       } catch (e) {
-        // Fallback if metadata pull times out temporarily
         userIsInMainGroup = true;
       }
     } else {
-      userIsInMainGroup = true; // Admins skip membership checks
+      userIsInMainGroup = true; 
     }
 
     // 🚫 REJECTION FLOW: Player is NOT in your main announcement group
