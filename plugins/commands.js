@@ -1,6 +1,8 @@
 import { CONFIG } from '../config.js';
 
+// 🛡️ Explicitly whitelisting your number in the array to guarantee access
 let adminList = new Set([
+  "917866052212", 
   "919158210010", 
   "9954865200"    
 ]); 
@@ -34,8 +36,9 @@ export function getActiveMatch() { return activeMatchStaging; }
 export function getAuthorizedPosterGroups() { return Array.from(authorizedPosterGroups); }
 
 function verifyAuthority(senderJid, requireRoot = false) {
-  const dynamicCleanNum = senderJid.split('@')[0];
-  const rootCleanNum = CONFIG.OWNER.split('@')[0];
+  if (!senderJid) return false;
+  const dynamicCleanNum = senderJid.split('@')[0].replace(/[^0-9]/g, '');
+  const rootCleanNum = CONFIG.OWNER.split('@')[0].replace(/[^0-9]/g, '');
   
   if (dynamicCleanNum === rootCleanNum) return true; 
   if (requireRoot) return false;                     
@@ -92,7 +95,6 @@ export const commands = {
       let inviteLink = args[0];
       if (inviteLink.includes('chat.whatsapp.com/')) {
         let code = inviteLink.split('chat.whatsapp.com/')[1].trim();
-        // 🛠️ CRITICAL UPGRADE: Strip everything starting with "?" or bracket components safely
         if (code.includes('?')) code = code.split('?')[0];
         if (code.includes(']')) code = code.replace(']', '');
         
@@ -138,31 +140,37 @@ export const commands = {
 
     const eventName = args[0];
     const matchId = args[1];
-    let groupLink = args[2];
-    if (!eventName || !matchId || !groupLink) {
-      return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ *Usage:* \`.startresult [Event_Name] [Match_ID] [Room_Group_Link]\`" });
+    let groupLink = args[2] || CONFIG.MAIN_GROUP_INVITE_LINK;
+    if (!eventName || !matchId) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ *Usage:* \`.startresult [Event_Name] [Match_ID]\`" });
     }
 
     if (groupLink.includes('chat.whatsapp.com/')) groupLink = groupLink.split('chat.whatsapp.com/')[1].trim();
     activeMatchStaging = { eventName, matchId, targetGroupMetadata: groupLink };
-    await sock.sendMessage(msg.key.remoteJid, { text: `🏁 *Tournament Match Staged!*` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `🏁 *Tournament Match Staged successfully using Official Link!*` });
   },
 
   send: async (sock, msg, args, rawFullText) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
     if (!activeMatchStaging) return await sock.sendMessage(msg.key.remoteJid, { text: "❌ No active match staged. Run \`.startresult\` first." });
-    if (!mainGroupJid) return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Set your main community group using \`.setmaingroup\` first." });
-
+    
+    const communityLink = CONFIG.MAIN_GROUP_INVITE_LINK;
     const lines = rawFullText.split('\n').slice(1);
     if (lines.length === 0) return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Add your team lines right below the .send command!" });
 
     await sock.sendMessage(msg.key.remoteJid, { text: `📊 *Processing lists...*` });
 
     try {
-      const mainMeta = await sock.groupMetadata(mainGroupJid);
-      const mainInviteCode = await sock.groupInviteCode(mainGroupJid);
-      const mainGroupLink = `https://chat.whatsapp.com/${mainInviteCode}`;
+      let mainParticipants = [];
+      if (mainGroupJid) {
+        try {
+          const mainMeta = await sock.groupMetadata(mainGroupJid);
+          mainParticipants = mainMeta.participants.map(p => p.id);
+        } catch (e) {
+          console.log("Could not pull current live metadata, defaulting safely.");
+        }
+      }
 
       for (const line of lines) {
         if (!line.trim()) continue;
@@ -185,9 +193,9 @@ export const commands = {
           payloadText = `🏴‍☠️ *PIRATES SCRIMS PLACEMENT NOTIFICATION* ⚔️\n\nTeam *${teamName}* completed combat operations in position *#${rank}* for *${activeMatchStaging.eventName}*.\n\nReady up your squad, review the map guidelines, and clear the lobby next time!`;
         }
 
-        const isPlayerInMainGroup = mainMeta.participants.some(p => p.id === playerJid);
+        const isPlayerInMainGroup = mainParticipants.includes(playerJid);
         if (!isPlayerInMainGroup) {
-          payloadText += `\n\n🔗 *Community Broadcast:* We noticed your team captain isn't in our main hub yet. Join up here to see live updates: ${mainGroupLink}`;
+          payloadText += `\n\n🔗 *Community Broadcast:* We noticed your team captain isn't in our main hub yet. Join up here to see live updates: ${communityLink}`;
         }
 
         await sock.sendMessage(playerJid, { text: payloadText });
@@ -228,7 +236,7 @@ export const commands = {
 • \`.deactive\` - Stops auto-posting inside the target group chat.
 
 🏆 *SCRIMS AUTOMATION*
-• \`.startresult [Name] [ID] [Link]\` - Stages an active match lobby.
+• \`.startresult [Name] [ID]\` - Stages an active match lobby.
 • \`.send [Placements List]\` - Runs leaderboard DMs with main hub fallbacks.`;
       
       await sock.sendMessage(msg.key.remoteJid, { text: masterDashboard });
@@ -244,7 +252,8 @@ Need support or looking to register for open slots? Use the casual keyword optio
 📞 *ACTIVE MANAGEMENT LINE:*
 • Support Helpline: wa.me/${currentOnDutyAdmin}
 
-_Ensure you stay locked into our official main announcement group chats for daily room slots and dynamic prize pool drops!_`;
+_Ensure you stay locked into our official main announcement group chats for daily room slots and dynamic prize pool drops!_
+👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
       
       await sock.sendMessage(msg.key.remoteJid, { text: playerDashboard });
     }
@@ -253,15 +262,8 @@ _Ensure you stay locked into our official main announcement group chats for dail
   handleTournamentPitch: async (sock, msg) => {
     if (!activeMatchStaging) return;
     const currentOnDutyAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
-    let communityInviteLink = "https://chat.whatsapp.com/...";
-    try {
-      if (mainGroupJid) {
-        const code = await sock.groupInviteCode(mainGroupJid);
-        communityInviteLink = `https://chat.whatsapp.com/${code}`;
-      }
-    } catch (e) {}
 
-    const pitchCaptionText = `🔥 *PIRATES TOURNAMENT IS LIVE NOW!* 🔥\n───────────────────────────\n🏆 *Active Event:* ${activeMatchStaging.eventName}\n🆔 *Match Register ID:* ${activeMatchStaging.matchId}\n\n🏴‍☠️ *HOW TO JOIN & REGISTER:*\n1️⃣ Join our Main Hub Group:\n👉 ${communityInviteLink}\n\n2️⃣ DM our active shift manager to lock slots:\n👉 wa.me/${currentOnDutyAdmin}`;
+    const pitchCaptionText = `🔥 *PIRATES TOURNAMENT IS LIVE NOW!* 🔥\n───────────────────────────\n🏆 *Active Event:* ${activeMatchStaging.eventName}\n🆔 *Match Register ID:* ${activeMatchStaging.matchId}\n\n🏴‍☠️ *HOW TO JOIN & REGISTER:*\n1️⃣ Join our Main Hub Group:\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\n2️⃣ DM our active shift manager to lock slots:\n👉 wa.me/${currentOnDutyAdmin}`;
 
     await sock.sendMessage(msg.key.remoteJid, {
       image: { url: dynamicPresets.pirates_paid_scrim.imageUrl },
@@ -283,7 +285,7 @@ _Ensure you stay locked into our official main announcement group chats for dail
   },
 
   handleAiFallback: async (sock, msg, text) => {
-    const fallbackText = `🏴‍☠️ *LuffyTaro Bot Engine* 🏴‍☠️\n\nAhoy! Thanks for messaging Pirates Scrims.\n\n• Type *guidelines* to read regulations.\n• Type *help* to contact admin staff.`;
+    const fallbackText = `🏴‍☠️ *LuffyTaro Bot Engine* 🏴‍☠️\n\nAhoy! Thanks for messaging Pirates Scrims.\n\n• Type *guidelines* to read regulations.\n• Type *help* to contact admin staff.\n\nOfficial Link:\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
     await sock.sendMessage(msg.key.remoteJid, { text: fallbackText });
   }
 };
