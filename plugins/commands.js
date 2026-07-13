@@ -1,10 +1,14 @@
 import { getConfig } from '../sql/database.js';
 import { CONFIG } from '../config.js';
 
-let adminList = new Set(); 
+let adminList = new Set([
+  "919158210010", 
+  "9954865200"    
+]); 
+
 let activeMatchStaging = null;
 let mainGroupJid = null; 
-let authorizedPosterGroups = new Set(); // Stores JIDs of groups getting the 15-min auto ads
+let authorizedPosterGroups = new Set(); 
 
 let dynamicPresets = {
   pirates_paid_scrim: {
@@ -33,38 +37,45 @@ export function getAuthorizedPosterGroups() { return Array.from(authorizedPoster
 function verifyAuthority(senderJid, requireRoot = false) {
   const dynamicCleanNum = senderJid.split('@')[0];
   const rootCleanNum = CONFIG.OWNER.split('@')[0];
-  if (dynamicCleanNum === rootCleanNum) return true;
-  if (requireRoot) return false; 
-  return adminList.has(dynamicCleanNum);
+  
+  if (dynamicCleanNum === rootCleanNum) return true; 
+  if (requireRoot) return false;                     
+  return adminList.has(dynamicCleanNum);             
 }
 
 export const commands = {
-  // 👑 Security Cluster
   addadmin: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
-    if (!verifyAuthority(sender, true)) return;
+    if (!verifyAuthority(sender, true)) return await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Security Denial:* Only the Master Owner can add new admins." });
+    
     const targetAdmin = args[0]?.replace(/[^0-9]/g, '');
-    if (targetAdmin) adminList.add(targetAdmin);
+    if (!targetAdmin) return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Usage: \`.addadmin 91XXXXXXXXXX\`" });
+    
+    adminList.add(targetAdmin);
     await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Clearance Granted:* Sub-admin +${targetAdmin} added.` });
   },
 
   deladmin: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
-    if (!verifyAuthority(sender, true)) return;
+    if (!verifyAuthority(sender, true)) return await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Security Denial:* Only the Master Owner can remove admins." });
+    
     const targetAdmin = args[0]?.replace(/[^0-9]/g, '');
-    if (targetAdmin && targetAdmin !== CONFIG.OWNER.split('@')[0]) adminList.delete(targetAdmin);
-    await sock.sendMessage(msg.key.remoteJid, { text: `🗑 *Clearance Revoked:* Sub-admin removed.` });
+    if (targetAdmin === CONFIG.OWNER.split('@')[0]) return await sock.sendMessage(msg.key.remoteJid, { text: "🛡️ Root Owner cannot be deleted." });
+    
+    if (adminList.has(targetAdmin)) {
+      adminList.delete(targetAdmin);
+      await sock.sendMessage(msg.key.remoteJid, { text: `🗑️ *Clearance Revoked:* Sub-admin +${targetAdmin} removed.` });
+    }
   },
 
   listadmins: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
-    let text = `🏴‍☠️ *PIRATES ADMIN LIST*\n👑 Master: @${CONFIG.OWNER.split('@')[0]}\n`;
-    adminList.forEach(admin => { text += `🛠 Sub: @${admin}\n`; });
+    let text = `🏴‍☠️ *PIRATES ADMIN LIST*\n\n👑 *Master Owner:* @${CONFIG.OWNER.split('@')[0]}\n`;
+    adminList.forEach(admin => { text += `🛠️ *Sub-Admin:* @${admin}\n`; });
     await sock.sendMessage(msg.key.remoteJid, { text, mentions: [CONFIG.OWNER, ...Array.from(adminList).map(n => `${n}@s.whatsapp.net`)] });
   },
 
-  // 📍 Network Hub Anchor
   setmaingroup: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
@@ -73,14 +84,11 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *Anchor Locked:* This group is now set as the Main Hub." });
   },
 
-  // 📢 New Dynamic Auto-Post Authorization Commands
   active: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
 
     let targetGroupJid = "";
-    
-    // Check if link was provided, otherwise default to current room JID
     if (args[0]) {
       let inviteLink = args[0];
       if (inviteLink.includes('chat.whatsapp.com/')) {
@@ -121,7 +129,6 @@ export const commands = {
     }
   },
 
-  // 🏁 Tournament Control
   startresult: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
@@ -138,7 +145,6 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `🏁 *Tournament Match Staged!*` });
   },
 
-  // 📊 Multi-Channel Placements Dispatcher
   send: async (sock, msg, args, rawFullText) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
@@ -200,11 +206,16 @@ export const commands = {
   },
 
   menu: async (sock, msg) => {
-    const menuDashboard = `🏴‍☠️ *LUFFYTARO PIRATES MASTER COMMAND DIRECTORY* 🏴‍☠️
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const currentOnDutyAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
+    
+    if (verifyAuthority(sender)) {
+      const masterDashboard = `🏴‍☠️ *LUFFYTARO PIRATES MASTER COMMAND DIRECTORY* 🏴‍☠️
 
 👑 *SECURITY COMMANDS (Master Owner Only)*
 • \`.addadmin [Phone]\` - Authorizes a new sub-admin number.
 • \`.deladmin [Phone]\` - Instantly strips a sub-admin's clearance.
+• \`.listadmins\` - View all active admins.
 
 📍 *SYNC ANCHORS*
 • \`.setmaingroup\` - Sets current room as main community hub.
@@ -216,8 +227,24 @@ export const commands = {
 🏆 *SCRIMS AUTOMATION*
 • \`.startresult [Name] [ID] [Link]\` - Stages an active match lobby.
 • \`.send [Placements List]\` - Runs leaderboard DMs with main hub fallbacks.`;
-    
-    await sock.sendMessage(msg.key.remoteJid, { text: menuDashboard });
+      
+      await sock.sendMessage(msg.key.remoteJid, { text: masterDashboard });
+    } else {
+      const playerDashboard = `🏴‍☠️ *PIRATES SCRIMS PLAYER MENU* 🏴‍☠️
+───────────────────────────
+Need support or looking to register for open slots? Use the casual keyword options below directly in our private chat!
+
+📝 *AVAILABLE PLAYER REQUESTS:*
+• Type *guidelines* - Read tournament regulations and policies.
+• Type *help* - Open an urgent support ticket directly with our administration team.
+
+📞 *ACTIVE MANAGEMENT LINE:*
+• Support Helpline: wa.me/${currentOnDutyAdmin}
+
+_Ensure you stay locked into our official main announcement group chats for daily room slots and dynamic prize pool drops!_`;
+      
+      await sock.sendMessage(msg.key.remoteJid, { text: playerDashboard });
+    }
   },
 
   handleTournamentPitch: async (sock, msg) => {
