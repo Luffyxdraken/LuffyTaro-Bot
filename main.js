@@ -50,14 +50,14 @@ async function startBot() {
     browser: ['LuffyTaro Scrims', 'Chrome', '1.0.0']
   });
 
-  // 🕒 15-Minute Auto-Poster Background Loop (Updated to targeted list only)
+  // 🕒 15-Minute Auto-Poster Background Loop
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return;
 
       const targetGroupIds = getAuthorizedPosterGroups();
-      if (targetGroupIds.length === 0) return; // Skip if no groups are set to active yet
+      if (targetGroupIds.length === 0) return; 
 
       const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n> PIRATES CS LOBBY \n* *ENTRY - 30/50/100 RS*\n* *PP - 60 /100/180 RS*\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n \n> PIRATES PAID SCRIMS\n\n\`BENEFIT\`\n*HIGHEST PP IN* \`COMMUNITY\`\n*PP CLEAR IN* \`10\` *MIN*\n\n*_DM  +${activeAdmin} FOR SLOTS_* 🔥`;
 
@@ -66,7 +66,7 @@ async function startBot() {
           await sock.sendMessage(groupId, { text: lobbyMessage });
           await new Promise(resolve => setTimeout(resolve, 1500));
         } catch (err) {
-          console.error(`Could not post to authorized group ${groupId}:`, err.message);
+          console.error(`Could not post to group ${groupId}:`, err.message);
         }
       }
     } catch (err) {
@@ -96,6 +96,7 @@ async function startBot() {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
+    // 🛡️ Loop Preventer Guard
     if (!msg.message || msg.key.fromMe) return;
 
     const sender = msg.key.participant || msg.key.remoteJid;
@@ -105,7 +106,15 @@ async function startBot() {
     if (!isGroup) {
       const lowerText = text.toLowerCase().trim();
       
-      if (lowerText === 'help' || lowerText.includes('problem') || lowerText.includes('issue')) {
+      if (lowerText === 'help' || lowerText === 'menu' || lowerText.includes('problem') || lowerText.includes('issue')) {
+        // Intercept help or menu in private text
+        if (text.startsWith(CONFIG.PREFIX)) {
+          const commandName = text.slice(CONFIG.PREFIX.length).trim().split(/ +/)[0].toLowerCase();
+          if (commandName === 'menu' || commandName === 'help') {
+            await commands.menu(sock, msg);
+            return;
+          }
+        }
         await commands.handleHelpRequest(sock, msg, sender, text);
         return;
       }
