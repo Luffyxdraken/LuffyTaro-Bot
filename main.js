@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js';
-import { commands, getActiveAdminForTime, getActiveMatch, getAuthorizedPosterGroups } from './plugins/commands.js';
+import { commands, getActiveAdminForTime, getActiveMatch, getAuthorizedPosterGroups, verifyAuthority } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
 const PORT = process.env.PORT || 3000;
@@ -25,7 +25,6 @@ async function initSession() {
     try {
       const base64Data = CONFIG.SESSION_ID.includes(';;;') ? CONFIG.SESSION_ID.split(';;;')[1] : CONFIG.SESSION_ID;
       fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
-      console.log('✅ Fresh Session ID written to disk.');
     } catch (err) {
       console.error('❌ Session decoding failed:', err.message);
     }
@@ -38,9 +37,7 @@ async function startBot() {
   try {
     const latest = await fetchLatestWaWebVersion();
     if (latest && latest.version) version = latest.version;
-  } catch (e) {
-    console.log('⚠️ Running with default web fallback version.');
-  }
+  } catch (e) {}
 
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }),
@@ -77,57 +74,66 @@ async function startBot() {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
-    
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      if (statusCode !== DisconnectReason.loggedOut) {
-        setTimeout(() => startBot(), 5000);
-      }
-    } else if (connection === 'open') {
-      console.log('✅ Bot Online.');
+      if (statusCode !== DisconnectReason.loggedOut) setTimeout(() => startBot(), 5000);
     }
   });
 
   sock.ev.on('creds.update', saveCreds);
   
   sock.ev.on('group-participants.update', async (update) => {
-    try { await handleGroupParticipants(sock, update); } catch (e) { console.error(e); }
+    try { await handleGroupParticipants(sock, update); } catch (e) {}
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    
-    // 🛡️ GUARD 1: Clear empty flags and stop the bot from processing its own actions
     if (!msg.message || msg.key.fromMe) return;
 
     const sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
-    // 🔥 RULE 1: IF IT HAS A DOT PREFIX, EXECUTE COMMAND IMMEDIATELY (DM OR GROUP)
+    // 🔥 RULE 1: PREFIX COMMAND OVERRIDE (DM OR GROUP)
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
-      let targetCmd = commandName;
-      if (commandName === 'menu' || commandName === 'help') targetCmd = 'menu';
+      let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
 
       if (commands[targetCmd]) {
-        try {
-          await commands[targetCmd](sock, msg, args, text);
-        } catch (err) {
-          console.error(err);
-        }
-        return; // Complete execution safely
+        try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+        return;
       }
     }
 
-    // 🔥 RULE 2: IF IT IS IN A GROUP AND NOT A COMMAND, IGNORE COMPLETELY
     if (isGroup) return;
 
-    // 🔥 RULE 3: PRIVATE CHAT HELPLINE SYSTEM (NO PREFIXES REQUIRED)
+    // 🛡️ GATEKEEPER CHECK: Is this user allowed to talk to the bot?
+    const isOwnerOrAdmin = verifyAuthority(sender);
+    let userIsInMainGroup = false;
+
+    if (!isOwnerOrAdmin && CONFIG.MAIN_GROUP_JID) {
+      try {
+        const metadata = await sock.groupMetadata(CONFIG.MAIN_GROUP_JID);
+        userIsInMainGroup = metadata.participants.some(p => p.id === sender);
+      } catch (e) {
+        // Fallback if metadata pull times out temporarily
+        userIsInMainGroup = true;
+      }
+    } else {
+      userIsInMainGroup = true; // Admins skip membership checks
+    }
+
+    // 🚫 REJECTION FLOW: Player is NOT in your main announcement group
+    if (!userIsInMainGroup) {
+      const rejectionText = `⚠️ *ACCESS DENIED* ⚠️\n\nYou are not a verified member of our community platform.\n\n👉 *Please join our official group using this link first:* ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\nOnce joined, you can message the bot engine freely!`;
+      await sock.sendMessage(msg.key.remoteJid, { text: rejectionText });
+      return;
+    }
+
+    // 🔓 APPROVED FLOW: Player is in the group or is an authorized admin
     const lowerText = text.toLowerCase().trim();
     
-    // Hard Keywords Filter
     if (lowerText === 'help' || lowerText === 'menu' || lowerText.includes('problem') || lowerText.includes('issue')) {
       await commands.handleHelpRequest(sock, msg, sender, text);
       return;
@@ -143,7 +149,6 @@ async function startBot() {
       return;
     }
 
-    // Default Chatbot Text Intercept Flow
     const activeMatch = getActiveMatch();
     if (activeMatch) {
       await commands.handleTournamentPitch(sock, msg);
