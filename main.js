@@ -108,32 +108,24 @@ async function startBot() {
 
     if (isGroup) return;
 
-    // 🛡️ 2. STRICT GATEKEEPER COMMUNITY ACCESS VALIDATION
-    let userIsInMainGroup = false;
+        // 🛡️ 2. RELAXED GATEKEEPER (Fail-Open)
+    let userIsInMainGroup = true; // Default to TRUE
     
-    if (!isOwnerOrAdmin) {
-      const targetCheckHub = CONFIG.MAIN_GROUP_JID || "None";
-      
-      if (targetCheckHub && targetCheckHub !== "None") {
+    if (!isOwnerOrAdmin && CONFIG.MAIN_GROUP_JID && CONFIG.MAIN_GROUP_JID !== "None") {
         try {
-          // Force fetch the live community roster directly from WhatsApp
-          const metadata = await sock.groupMetadata(targetCheckHub);
-          const cleanSenderId = sender.split('@')[0].split(':')[0];
-          
-          userIsInMainGroup = metadata.participants.some(p => {
-            const cleanParticipantId = p.id.split('@')[0].split(':')[0];
-            return cleanParticipantId === cleanSenderId;
-          });
+            const metadata = await sock.groupMetadata(CONFIG.MAIN_GROUP_JID);
+            const cleanSenderId = sender.split('@')[0].split(':')[0];
+            
+            userIsInMainGroup = metadata.participants.some(p => {
+                const cleanParticipantId = p.id.split('@')[0].split(':')[0];
+                return cleanParticipantId === cleanSenderId;
+            });
         } catch (e) {
-          // If the group doesn't exist or isn't loaded yet, default to false to protect your gate
-          userIsInMainGroup = false;
+            // If the lookup fails (network error, etc), we allow the user.
+            // This prevents your bot from "dying" or going silent.
+            userIsInMainGroup = true;
+            console.log("⚠️ Group metadata fetch failed, but bypassing for safety.");
         }
-      } else {
-        // If no main group ID is assigned yet, allow chatting
-        userIsInMainGroup = true; 
-      }
-    } else {
-      userIsInMainGroup = true; // Admins skip verification entirely
     }
 
     // 🚫 REJECTION ACTION FOR EXTERNAL PLAYERS
