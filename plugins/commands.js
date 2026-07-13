@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 let adminList = new Set(); 
 let activeMatchStaging = null;
 let mainGroupJid = null; 
+let authorizedPosterGroups = new Set(); // Stores JIDs of groups getting the 15-min auto ads
 
 let dynamicPresets = {
   pirates_paid_scrim: {
@@ -26,9 +27,8 @@ export function getActiveAdminForTime() {
   return null;
 }
 
-export function getActiveMatch() {
-  return activeMatchStaging;
-}
+export function getActiveMatch() { return activeMatchStaging; }
+export function getAuthorizedPosterGroups() { return Array.from(authorizedPosterGroups); }
 
 function verifyAuthority(senderJid, requireRoot = false) {
   const dynamicCleanNum = senderJid.split('@')[0];
@@ -53,14 +53,14 @@ export const commands = {
     if (!verifyAuthority(sender, true)) return;
     const targetAdmin = args[0]?.replace(/[^0-9]/g, '');
     if (targetAdmin && targetAdmin !== CONFIG.OWNER.split('@')[0]) adminList.delete(targetAdmin);
-    await sock.sendMessage(msg.key.remoteJid, { text: `🗑️ *Clearance Revoked:* Sub-admin removed.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `🗑 *Clearance Revoked:* Sub-admin removed.` });
   },
 
   listadmins: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
     let text = `🏴‍☠️ *PIRATES ADMIN LIST*\n👑 Master: @${CONFIG.OWNER.split('@')[0]}\n`;
-    adminList.forEach(admin => { text += `🛠️ Sub: @${admin}\n`; });
+    adminList.forEach(admin => { text += `🛠 Sub: @${admin}\n`; });
     await sock.sendMessage(msg.key.remoteJid, { text, mentions: [CONFIG.OWNER, ...Array.from(adminList).map(n => `${n}@s.whatsapp.net`)] });
   },
 
@@ -73,7 +73,55 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *Anchor Locked:* This group is now set as the Main Hub." });
   },
 
-  // 🏁 Tournament / Match Staging Control
+  // 📢 New Dynamic Auto-Post Authorization Commands
+  active: async (sock, msg, args) => {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    if (!verifyAuthority(sender)) return;
+
+    let targetGroupJid = "";
+    
+    // Check if link was provided, otherwise default to current room JID
+    if (args[0]) {
+      let inviteLink = args[0];
+      if (inviteLink.includes('chat.whatsapp.com/')) {
+        const code = inviteLink.split('chat.whatsapp.com/')[1].trim();
+        try {
+          const groupInfo = await sock.groupGetInviteInfo(code);
+          targetGroupJid = groupInfo.id;
+        } catch (e) {
+          return await sock.sendMessage(msg.key.remoteJid, { text: "❌ Invalid or expired group link code." });
+        }
+      } else if (inviteLink.endsWith('@g.us')) {
+        targetGroupJid = inviteLink;
+      }
+    } else {
+      if (msg.key.remoteJid.endsWith('@g.us')) {
+        targetGroupJid = msg.key.remoteJid;
+      } else {
+        return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Please provide a group link or run this directly inside a group chat! \`.active [link]\`" });
+      }
+    }
+
+    authorizedPosterGroups.add(targetGroupJid);
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Auto-Post Active:* This bot will now broadcast the 15-minute shift text to group: \`${targetGroupJid}\`` });
+  },
+
+  deactive: async (sock, msg, args) => {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    if (!verifyAuthority(sender)) return;
+
+    let targetGroupJid = msg.key.remoteJid;
+    if (args[0] && args[0].endsWith('@g.us')) targetGroupJid = args[0];
+
+    if (authorizedPosterGroups.has(targetGroupJid)) {
+      authorizedPosterGroups.delete(targetGroupJid);
+      await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Auto-Post Deactivated:* This group has been removed from the broadcast list." });
+    } else {
+      await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ This group was not on the active broadcast list." });
+    }
+  },
+
+  // 🏁 Tournament Control
   startresult: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
@@ -87,7 +135,7 @@ export const commands = {
 
     if (groupLink.includes('chat.whatsapp.com/')) groupLink = groupLink.split('chat.whatsapp.com/')[1].trim();
     activeMatchStaging = { eventName, matchId, targetGroupMetadata: groupLink };
-    await sock.sendMessage(msg.key.remoteJid, { text: `🏁 *Tournament Match Staged!* \n\n🤖 *Bot Action:* If any user DMs the bot right now, it will automatically pitch this registration information with images!` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `🏁 *Tournament Match Staged!*` });
   },
 
   // 📊 Multi-Channel Placements Dispatcher
@@ -100,7 +148,7 @@ export const commands = {
     const lines = rawFullText.split('\n').slice(1);
     if (lines.length === 0) return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Add your team lines right below the .send command!" });
 
-    await sock.sendMessage(msg.key.remoteJid, { text: `📊 *Processing list... Dispatched messages will include community invite cross-checks.*` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `📊 *Processing lists...*` });
 
     try {
       const mainMeta = await sock.groupMetadata(mainGroupJid);
@@ -143,7 +191,6 @@ export const commands = {
     }
   },
 
-  // 📝 Modify Guidelines Preset Text
   modify: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     if (!verifyAuthority(sender)) return;
@@ -152,34 +199,30 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `🎯 Presets updated successfully.` });
   },
 
-  // 📋 Comprehensive System Commands Directory Dashboard
   menu: async (sock, msg) => {
     const menuDashboard = `🏴‍☠️ *LUFFYTARO PIRATES MASTER COMMAND DIRECTORY* 🏴‍☠️
 
 👑 *SECURITY COMMANDS (Master Owner Only)*
 • \`.addadmin [Phone]\` - Authorizes a new sub-admin number.
 • \`.deladmin [Phone]\` - Instantly strips a sub-admin's clearance.
-• \`.listadmins\` - Lists everyone currently authorized as admin.
 
 📍 *SYNC ANCHORS*
-• \`.setmaingroup\` - Sets the current group as your main community hub.
+• \`.setmaingroup\` - Sets current room as main community hub.
 
-🏆 *SCRIMS & TOURNAMENT AUTOMATION*
-• \`.startresult [Name] [ID] [Link]\` - Stages an active tourney match.
-  ↳ *Effect:* Automatically intercepts casual customer private messages to pitch registration banners, links, and shift-admin contacts!
-• \`.send [Placements List]\` - Dispatches customized DMs (1st, 2nd, etc.) and auto-attaches main group invitation links to missing players.
+📢 *BROADCAST LOOP CONTROL*
+• \`.active [Group Link or ID]\` - Whitelists a group for the 15-minute background auto-poster.
+• \`.deactive\` - Stops auto-posting inside the target group chat.
 
-📝 *CONTENT SYSTEM CONTROL*
-• \`.modify preset \"pirates_paid_scrim\" [Text]\` - Direct changes your rules block template.`;
+🏆 *SCRIMS AUTOMATION*
+• \`.startresult [Name] [ID] [Link]\` - Stages an active match lobby.
+• \`.send [Placements List]\` - Runs leaderboard DMs with main hub fallbacks.`;
     
     await sock.sendMessage(msg.key.remoteJid, { text: menuDashboard });
   },
 
-  // 📥 Automatic Private DM Tournament Intercept Pitch Engine
   handleTournamentPitch: async (sock, msg) => {
     if (!activeMatchStaging) return;
     const currentOnDutyAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
-    
     let communityInviteLink = "https://chat.whatsapp.com/...";
     try {
       if (mainGroupJid) {
@@ -188,7 +231,7 @@ export const commands = {
       }
     } catch (e) {}
 
-    const pitchCaptionText = `🔥 *PIRATES TOURNAMENT IS LIVE NOW!* 🔥\n───────────────────────────\n🏆 *Active Event:* ${activeMatchStaging.eventName}\n🆔 *Match Register ID:* ${activeMatchStaging.matchId}\n\n🏴‍☠️ *HOW TO JOIN & REGISTER:*\n1️⃣ Make sure your team has joined our primary Community Group Hub:\n👉 ${communityInviteLink}\n\n2️⃣ Tap the link below to DM our active shift manager immediately to secure your open slot before registrations lock out:\n👉 wa.me/${currentOnDutyAdmin}\n\n⚡ *Highest payouts in the community, clearing flat in 10 minutes. Grab your slot!*`;
+    const pitchCaptionText = `🔥 *PIRATES TOURNAMENT IS LIVE NOW!* 🔥\n───────────────────────────\n🏆 *Active Event:* ${activeMatchStaging.eventName}\n🆔 *Match Register ID:* ${activeMatchStaging.matchId}\n\n🏴‍☠️ *HOW TO JOIN & REGISTER:*\n1️⃣ Join our Main Hub Group:\n👉 ${communityInviteLink}\n\n2️⃣ DM our active shift manager to lock slots:\n👉 wa.me/${currentOnDutyAdmin}`;
 
     await sock.sendMessage(msg.key.remoteJid, {
       image: { url: dynamicPresets.pirates_paid_scrim.imageUrl },
@@ -196,7 +239,6 @@ export const commands = {
     });
   },
 
-  // Casual Customer Keywords Handlers
   handleHelpRequest: async (sock, msg, senderJid, userText) => {
     const cleanNum = senderJid.split('@')[0];
     const systemAdminNode = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
@@ -211,8 +253,7 @@ export const commands = {
   },
 
   handleAiFallback: async (sock, msg, text) => {
-    // Simple conversational theme response fallback
-    const fallbackText = `🏴‍☠️ *LuffyTaro Bot Engine* 🏴‍☠️\n\nAhoy! Thanks for messaging Pirates Scrims. \n\n• Type *guidelines* to read tournament regulations.\n• Type *help* if you need an active administrator to look at your issue.\n\n_If you're asking about open tournaments, keep an eye on our official groups!_`;
+    const fallbackText = `🏴‍☠️ *LuffyTaro Bot Engine* 🏴‍☠️\n\nAhoy! Thanks for messaging Pirates Scrims.\n\n• Type *guidelines* to read regulations.\n• Type *help* to contact admin staff.`;
     await sock.sendMessage(msg.key.remoteJid, { text: fallbackText });
   }
 };
