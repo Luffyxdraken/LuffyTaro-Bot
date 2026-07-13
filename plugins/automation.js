@@ -1,3 +1,4 @@
+import { getConfig } from '../sql/database.js';
 import { createCanvas, loadImage } from 'canvas';
 import fs from 'fs';
 import path from 'path';
@@ -55,17 +56,21 @@ async function generateBanner(sock, participantId, titleText, subtitleText) {
 export async function handleGroupParticipants(sock, update) {
   const { id, participants, action } = update;
   
-  // Clean default structure settings logic fallback if getConfig sql layers are absent during startup
-  const config = { welcome_type: '1', goodbye_type: '1' }; 
+  let config = { welcome_type: '1', goodbye_type: '1' };
+  try {
+    config = getConfig(id) || config;
+  } catch (e) {
+    // Falls back seamlessly if database configuration queries encounter an anomaly
+  }
 
   for (const user of participants) {
     const jidNum = user.split('@')[0];
 
     if (action === 'add') {
       if (config.welcome_type === '1' || config.welcome_type === '2') {
-        const title = "🏴‍☠️ WELCOME TO THE SQUAD 🏴‍☠️";
+        const title = "🏴‍☠️ WELCOME TO THE TEAM 🏴‍☠️";
         const subtitle = `@${jidNum}`;
-        const captionText = `🏴‍☠️ Welcome @${jidNum} to the Pirates Paid Scrims arena! Read the rules and ready your squad up.`;
+        const captionText = `🏴‍☠️ Welcome @${jidNum} to the paid scrims arena! Read the rules and ready up.`;
 
         const imageBuffer = await generateBanner(sock, user, title, subtitle);
         await sock.sendMessage(id, { 
@@ -78,7 +83,7 @@ export async function handleGroupParticipants(sock, update) {
     
     else if (action === 'remove') {
       if (config.goodbye_type === '1' || config.goodbye_type === '2') {
-        const title = "❌ ELIMINATED FROM ARENA ❌";
+        const title = "❌ ELIMINATED FROM SCRIMS ❌";
         const subtitle = `@${jidNum}`;
         const captionText = `❌ @${jidNum} has left the squad battlefield.`;
 
@@ -92,4 +97,3 @@ export async function handleGroupParticipants(sock, update) {
     }
   }
 }
-
