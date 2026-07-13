@@ -1,4 +1,3 @@
-import { getConfig } from '../sql/database.js';
 import { CONFIG } from '../config.js';
 
 let adminList = new Set([
@@ -46,7 +45,7 @@ function verifyAuthority(senderJid, requireRoot = false) {
 export const commands = {
   addadmin: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
-    if (!verifyAuthority(sender, true)) return await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Security Denial:* Only the Master Owner can add new admins." });
+    if (!verifyAuthority(sender, true)) return;
     
     const targetAdmin = args[0]?.replace(/[^0-9]/g, '');
     if (!targetAdmin) return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Usage: \`.addadmin 91XXXXXXXXXX\`" });
@@ -57,10 +56,10 @@ export const commands = {
 
   deladmin: async (sock, msg, args) => {
     const sender = msg.key.participant || msg.key.remoteJid;
-    if (!verifyAuthority(sender, true)) return await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Security Denial:* Only the Master Owner can remove admins." });
+    if (!verifyAuthority(sender, true)) return;
     
     const targetAdmin = args[0]?.replace(/[^0-9]/g, '');
-    if (targetAdmin === CONFIG.OWNER.split('@')[0]) return await sock.sendMessage(msg.key.remoteJid, { text: "🛡️ Root Owner cannot be deleted." });
+    if (targetAdmin === CONFIG.OWNER.split('@')[0]) return;
     
     if (adminList.has(targetAdmin)) {
       adminList.delete(targetAdmin);
@@ -92,12 +91,16 @@ export const commands = {
     if (args[0]) {
       let inviteLink = args[0];
       if (inviteLink.includes('chat.whatsapp.com/')) {
-        const code = inviteLink.split('chat.whatsapp.com/')[1].trim();
+        let code = inviteLink.split('chat.whatsapp.com/')[1].trim();
+        // 🛠️ CRITICAL UPGRADE: Strip everything starting with "?" or bracket components safely
+        if (code.includes('?')) code = code.split('?')[0];
+        if (code.includes(']')) code = code.replace(']', '');
+        
         try {
           const groupInfo = await sock.groupGetInviteInfo(code);
           targetGroupJid = groupInfo.id;
         } catch (e) {
-          return await sock.sendMessage(msg.key.remoteJid, { text: "❌ Invalid or expired group link code." });
+          return await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Link Sync Error:* Invalid or expired group link code." });
         }
       } else if (inviteLink.endsWith('@g.us')) {
         targetGroupJid = inviteLink;
@@ -106,12 +109,12 @@ export const commands = {
       if (msg.key.remoteJid.endsWith('@g.us')) {
         targetGroupJid = msg.key.remoteJid;
       } else {
-        return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Please provide a group link or run this directly inside a group chat! \`.active [link]\`" });
+        return await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ Please provide a group link or run this inside a group!" });
       }
     }
 
     authorizedPosterGroups.add(targetGroupJid);
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Auto-Post Active:* This bot will now broadcast the 15-minute shift text to group: \`${targetGroupJid}\`` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Auto-Post Active:* Registered broadcast group target: \`${targetGroupJid}\`` });
   },
 
   deactive: async (sock, msg, args) => {
@@ -123,9 +126,9 @@ export const commands = {
 
     if (authorizedPosterGroups.has(targetGroupJid)) {
       authorizedPosterGroups.delete(targetGroupJid);
-      await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Auto-Post Deactivated:* This group has been removed from the broadcast list." });
+      await sock.sendMessage(msg.key.remoteJid, { text: "❌ *Auto-Post Deactivated:* This group has been removed." });
     } else {
-      await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ This group was not on the active broadcast list." });
+      await sock.sendMessage(msg.key.remoteJid, { text: "⚠️ This group was not on the active list." });
     }
   },
 
@@ -221,7 +224,7 @@ export const commands = {
 • \`.setmaingroup\` - Sets current room as main community hub.
 
 📢 *BROADCAST LOOP CONTROL*
-• \`.active [Group Link or ID]\` - Whitelists a group for the 15-minute background auto-poster.
+• \`.active [Group Link]\` - Whitelists a group for the 15-minute background auto-poster.
 • \`.deactive\` - Stops auto-posting inside the target group chat.
 
 🏆 *SCRIMS AUTOMATION*
