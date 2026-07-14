@@ -7,7 +7,7 @@ import { CONFIG } from './config.js';
 import { commands, verifyAuthority } from './plugins/commands.js';
 
 // ==========================================================
-// 1. INSTANT PORT BINDING FOR RENDER
+// 1. INSTANT PORT BINDING FOR RENDER (MUST RUN IMMEDIATELY)
 // ==========================================================
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
@@ -79,31 +79,30 @@ async function startBot() {
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }), 
     auth: state,
-    browser: ['Chrome (Ubuntu)', 'Chrome', '110.0.0'], // Matches pairing requirements
+    browser: ['Chrome (Ubuntu)', 'Chrome', '110.0.0'], 
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 15000,
   });
 
   // 🔑 PAIRING CODE GENERATOR
-  // If there is no existing session, ask WhatsApp for a pairing code instead of generating a QR.
   if (!sock.authState.creds.registered) {
-    // Make sure your CONFIG.OWNER_NUMBER is set to your phone number in config.js (e.g., 917866052212)
-    const phoneNumber = CONFIG.OWNER_NUMBER ? CONFIG.OWNER_NUMBER.replace(/[^0-9]/g, '') : '';
+    // We use CONFIG.BOT_NUMBER to generate the pairing code
+    const botPhone = CONFIG.BOT_NUMBER ? CONFIG.BOT_NUMBER.replace(/[^0-9]/g, '') : '';
     
-    if (phoneNumber) {
-      console.log(`🚀 Requesting pairing code for phone number: +${phoneNumber}`);
-      await delay(3000); // Small pause for the engine to initialize
+    if (botPhone) {
+      console.log(`🚀 Requesting pairing code for BOT phone number: +${botPhone}`);
+      await delay(5000); // 5-second delay to ensure transport layers are stable
       try {
-        const code = await sock.requestPairingCode(phoneNumber);
+        const code = await sock.requestPairingCode(botPhone);
         console.log('\n===================================================');
         console.log(`🔑 YOUR WHATSAPP PAIRING CODE: ${code}`);
         console.log('===================================================\n');
-        console.log('👉 Go to WhatsApp on your phone -> Settings -> Linked Devices -> Link with Phone Number instead, then type this code.');
+        console.log(`👉 Open WhatsApp on (+${botPhone}) -> Linked Devices -> Link with Phone Number, and enter this code.`);
       } catch (err) {
         console.error('Failed to request pairing code:', err.message);
       }
     } else {
-      console.log('❌ Error: CONFIG.OWNER_NUMBER is not configured. Cannot request pairing code.');
+      console.log('❌ Error: CONFIG.BOT_NUMBER is not configured. Cannot request pairing code.');
     }
   }
 
@@ -131,9 +130,10 @@ async function startBot() {
       reconnectAttempts = 0;
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
+      // All messages are sent directly to the OWNER_NUMBER
       const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
 
-      // 🔄 AUTO-SESSION GENERATION (Keeps you connected forever)
+      // 🔄 AUTO-SESSION GENERATION (Sent directly to Owner's DM)
       try {
         const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
         if (fs.existsSync(credsPath)) {
@@ -146,7 +146,7 @@ async function startBot() {
                              `_Once you add this to Render, the bot will stay connected forever without needing any more codes!_`;
           
           await sock.sendMessage(ownerJid, { text: sessionMsg });
-          console.log('📬 Session credentials successfully sent to your WhatsApp!');
+          console.log(`📬 Session credentials successfully sent to OWNER's WhatsApp: ${ownerJid}`);
         }
       } catch (err) {
         console.error('Failed to generate/send session string:', err.message);
