@@ -1,12 +1,11 @@
-import dotenv from 'dotenv';
-import path from 'path';
-dotenv.config();
-
+// config.js
 export const CONFIG = {
-  SESSION_ID: process.env.SESSION_ID || '',
-  SESSION_DIR: path.join(process.cwd(), 'data', 'session'),
-  DATABASE_PATH: path.join(process.cwd(), 'data', 'database.sqlite'),
+  BOT_NUMBER: '919382276553',     // 🤖 Your Bot Number
+  OWNER_NUMBER: '917866052212',   // 👑 Your Personal Number
   PREFIX: '.',
+  SESSION_DIR: './session',
+  SESSION_ID: process.env.SESSION_ID || ''
+};
   
   // 👑 MASTER OWNER ACCOUNT
   OWNER: '917866052212@s.whatsapp.net',
