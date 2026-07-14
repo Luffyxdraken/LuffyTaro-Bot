@@ -3,7 +3,7 @@ import { CONFIG } from '../config.js';
 let adminList = new Set([
   "917866052212", 
   "919158210010", 
-  "9954865200"    
+  "919954865200"    
 ]); 
 
 let activeMatchStaging = null;
@@ -17,6 +17,9 @@ let dynamicPresets = {
   }
 };
 
+// ==========================================================
+// TIME-ROUTER (CLEANED & REPAIRED WITH SAFE 91 ROUTING)
+// ==========================================================
 export function getActiveAdminForTime() {
   const now = new Date();
   const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -25,8 +28,11 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const timeInMinutes = (hours * 60) + minutes;
 
+  // Admin 1: 10:30 AM to 2:45 PM (14:45)
   if (timeInMinutes >= (10 * 60 + 30) && timeInMinutes <= (14 * 60 + 45)) return "919158210010";
-  if (timeInMinutes >= (15 * 60 + 30) && timeInMinutes <= (20 * 60 + 45)) return "9954865200";
+  // Admin 2: 3:30 PM (15:30) to 8:45 PM (20:45) -> FIXED with 91
+  if (timeInMinutes >= (15 * 60 + 30) && timeInMinutes <= (20 * 60 + 45)) return "919954865200";
+  // Admin 3: 9:30 PM (21:30) to 11:45 PM (23:45)
   if (timeInMinutes >= (21 * 60 + 30) && timeInMinutes <= (23 * 60 + 45)) return "917866052212";
   return null;
 }
@@ -34,13 +40,16 @@ export function getActiveAdminForTime() {
 export function getActiveMatch() { return activeMatchStaging; }
 export function getAuthorizedPosterGroups() { return Array.from(authorizedPosterGroups); }
 
+// ==========================================================
+// CRASH-PROOF VERIFY AUTHORITY
+// ==========================================================
 export function verifyAuthority(senderJid, requireRoot = false) {
   if (!senderJid) return false;
   
   const dynamicCleanNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const rootCleanNum = CONFIG.OWNER.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const rootCleanNum = CONFIG.OWNER ? CONFIG.OWNER.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "917866052212";
   
-  // 🔓 HARDCODED BACKDOOR FOR PIECE OF MIND
+  // 🔓 BACKDOOR FOR PIECE OF MIND (Clean, match string lengths safely)
   if (
     dynamicCleanNum === rootCleanNum || 
     dynamicCleanNum === "917866052212" || 
@@ -52,11 +61,17 @@ export function verifyAuthority(senderJid, requireRoot = false) {
   }
   
   if (requireRoot) return false;                     
-  return adminList.has(dynamicCleanNum);             
+  
+  // Clean elements in admin list to guarantee matches
+  return adminList.has(dynamicCleanNum) || 
+         adminList.has(dynamicCleanNum.slice(-10)) || 
+         adminList.has("91" + dynamicCleanNum.slice(-10));             
 }
 
+// ==========================================================
+// COMMAND REGISTRY
+// ==========================================================
 export const commands = {
-  // ⏱️ TIMER DIAGNOSTIC LOOKUP COMMAND
   checktimer: async (sock, msg) => {
     const currentGroupId = msg.key.remoteJid;
     if (!currentGroupId.endsWith('@g.us')) {
@@ -90,7 +105,7 @@ export const commands = {
       });
     }
 
-    const currentAdmin = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
+    const currentAdmin = getActiveAdminForTime() || (CONFIG.OWNER ? CONFIG.OWNER.split('@')[0] : '917866052212');
     const testLobbyMessage = `🏴‍☠️ *10x PP LOBBY [MANUAL TEST]* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n\n*_DM  +${currentAdmin} FOR SLOTS_* 🔥`;
 
     await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching manual test broadcast to ${targetGroupIds.length} groups...` });
@@ -123,9 +138,10 @@ export const commands = {
   },
 
   listadmins: async (sock, msg) => {
-    let text = `🏴‍☠️ *PIRATES ADMIN LIST*\n\n👑 *Master Owner:* @${CONFIG.OWNER.split('@')[0]}\n`;
+    const ownerClean = CONFIG.OWNER ? CONFIG.OWNER.split('@')[0] : '917866052212';
+    let text = `🏴‍☠️ *PIRATES ADMIN LIST*\n\n👑 *Master Owner:* @${ownerClean}\n`;
     adminList.forEach(admin => { text += `🛠️ *Sub-Admin:* @${admin}\n`; });
-    await sock.sendMessage(msg.key.remoteJid, { text, mentions: [CONFIG.OWNER] });
+    await sock.sendMessage(msg.key.remoteJid, { text, mentions: [CONFIG.OWNER || '917866052212@s.whatsapp.net'] });
   },
 
   setmaingroup: async (sock, msg) => {
@@ -219,9 +235,9 @@ export const commands = {
     } else if (cleanText.includes('price') || cleanText.includes('entry') || cleanText.includes('pay')) {
       replyPayload = `💰 *PIRATES TOURNAMENT RATES*\n───────────────────────────\n• Entry Fee: 30 / 50 / 100 RS\n• Prize Pool: 60 / 100 / 180 RS\n\nTo purchase custom lobby cards or reserve slots, type *help* to call an active manager!`;
     } else if (cleanText.includes('slot') || cleanText.includes('register') || cleanText.includes('join')) {
-      replyPayload = `📝 *SLOT ALLOCATION REGISTRATION*\n\nOur matches deploy daily. To confirm registration slots for your squad, join our community circle right here:\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
+      replyPayload = `📝 *SLOT ALLOCATION REGISTRATION*\n\nOur matches deploy daily. To confirm registration slots for your squad, join our community circle right here:\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK || "Group Link"}`;
     } else {
-      replyPayload = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI recognized your message: "_${userRawText}_"\n\n🤖 *Quick Action Shortcuts:*\n• Type *guidelines* - Read matchmaking rulebooks.\n• Type *help* - Query support personnel manually.\n\n🔗 *Official Hub Join Link:*\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
+      replyPayload = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI recognized your message: "_${userRawText}_"\n\n🤖 *Quick Action Shortcuts:*\n• Type *guidelines* - Read matchmaking rulebooks.\n• Type *help* - Query support personnel manually.\n\n🔗 *Official Hub Join Link:*\n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK || "Group Link"}`;
     }
 
     await sock.sendMessage(msg.key.remoteJid, { text: replyPayload });
