@@ -7,7 +7,7 @@ import { CONFIG } from './config.js';
 import { commands, verifyAuthority } from './plugins/commands.js';
 
 // ==========================================================
-// 1. INSTANT PORT BINDING FOR RENDER (MUST RUN IMMEDIATELY)
+// 1. INSTANT PORT BINDING FOR RENDER
 // ==========================================================
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
@@ -26,27 +26,23 @@ function getActiveAdminForTime() {
   const [hour, minute] = formatter.format(new Date()).split(':').map(Number);
   const totalMinutes = hour * 60 + minute;
 
-  // Admin 1: 10:30 AM - 11:45 AM (630-705) & 12:30 PM - 2:45 PM (750-885)
+  // Admin 1: 10:30 AM - 11:45 AM & 12:30 PM - 2:45 PM
   if ((totalMinutes >= 630 && totalMinutes <= 705) || (totalMinutes >= 750 && totalMinutes <= 885)) {
     return '919158210010';
   }
-  // Admin 2: 3:30 PM - 5:45 PM (930-1065) & 6:30 PM - 8:45 PM (1110-1245)
+  // Admin 2: 3:30 PM - 5:45 PM & 6:30 PM - 8:45 PM
   if ((totalMinutes >= 930 && totalMinutes <= 1065) || (totalMinutes >= 1110 && totalMinutes <= 1245)) {
     return '919954865200';
   }
-  // Admin 3: 9:30 PM - 11:45 PM (1290-1425)
+  // Admin 3: 9:30 PM - 11:45 PM
   if (totalMinutes >= 1290 && totalMinutes <= 1425) {
     return '917866052212';
   }
   return null; 
 }
 
-// Log scheduled shift on boot
-const currentScheduledAdmin = getActiveAdminForTime();
-console.log(`⏰ Time Sync (IST): Current active admin scheduled: ${currentScheduledAdmin || 'None (Idle period)'}`);
-
 // ==========================================
-// 3. SESSION INITIALIZATION
+// 3. SESSION INITIALIZATION & RESTORE
 // ==========================================
 function initSession() {
   if (CONFIG.SESSION_ID) {
@@ -55,16 +51,17 @@ function initSession() {
     }
     const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
     try {
+      // Decode the Base64 session back into creds.json
       const base64Data = CONFIG.SESSION_ID.includes(';;;') 
         ? CONFIG.SESSION_ID.split(';;;')[1] 
         : CONFIG.SESSION_ID;
         
       const decoded = Buffer.from(base64Data, 'base64').toString('utf-8');
-      JSON.parse(decoded); // Validate JSON format
+      JSON.parse(decoded); // Verify it's valid JSON
       fs.writeFileSync(credsPath, decoded);
-      console.log(`⚙️ Session credentials verified and restored. Size: ${decoded.length} bytes`);
+      console.log(`⚙️ Session credentials successfully restored from Env.`);
     } catch (err) {
-      console.error('❌ Session restoration failed. Your SESSION_ID string may be corrupted:', err.message);
+      console.error('❌ SESSION_ID restoration failed:', err.message);
     }
   }
 }
@@ -80,7 +77,7 @@ async function printQR(qr) {
     const qrcodeTerminal = await import('qrcode-terminal');
     qrcodeTerminal.default.generate(qr, { small: true });
   } catch (e) {
-    console.log('💡 Tip: Install "qrcode-terminal" to render the QR directly in your terminal.');
+    // Silently fall back to the link if terminal printing is missing
   }
   console.log(`\n🔗 OR open this link to scan with your phone:\n👉 https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}\n`);
   console.log('===================================================\n');
@@ -96,9 +93,9 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
   const sock = makeWASocket({
-    logger: pino({ level: 'silent' }), // Completely silent to save system memory
+    logger: pino({ level: 'silent' }), 
     auth: state,
-    browser: ['Chrome', 'Windows', '10.0.0'], // Mimics Windows Desktop client
+    browser: ['Chrome', 'Windows', '10.0.0'], 
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 15000,
   });
@@ -115,30 +112,46 @@ async function startBot() {
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const reason = lastDisconnect?.error?.message || 'Connection lost';
-      console.log(`🔌 Connection closed. Reason: ${reason} (Code: ${statusCode})`);
+      console.log(`🔌 Connection closed. Code: ${statusCode}`);
 
-      // Avoid infinite loop crashes on terminal or expired sessions
       if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-        console.log('❌ Session has expired or logged out. Resetting connection attempts. Please clear SESSION_ID and scan new QR.');
+        console.log('❌ Session has expired. Please clear SESSION_ID and scan new QR.');
         return;
       }
 
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential Backoff
-        console.log(`🔄 Reconnecting in ${delay / 1000}s... (Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
         setTimeout(startBot, delay);
-      } else {
-        console.log('❌ Maximum reconnect attempts reached. Waiting for manual restart.');
       }
     } else if (connection === 'open') {
-      reconnectAttempts = 0; // Reset safe connection attempt counter
+      reconnectAttempts = 0;
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
+      const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
+
+      // 🔄 AUTO-SESSION GENERATION (THE CORE FIX!)
+      try {
+        const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
+        if (fs.existsSync(credsPath)) {
+          const credsRaw = fs.readFileSync(credsPath, 'utf-8');
+          const base64Session = Buffer.from(credsRaw).toString('base64');
+          
+          // Send the generated session directly to the owner's WhatsApp DM
+          const sessionMsg = `🔑 *YOUR NEW SESSION ID* 🔑\n\n` +
+                             `Because Render restarts every day, copy the text below and paste it as your *SESSION_ID* environment variable in Render Settings:\n\n` +
+                             `\`\`\`LuffyTaro;;;${base64Session}\`\`\`\n\n` +
+                             `_Once you add this to Render, the bot will stay connected forever without needing any more QR scans!_`;
+          
+          await sock.sendMessage(ownerJid, { text: sessionMsg });
+          console.log('📬 Session credentials successfully sent to your WhatsApp!');
+        }
+      } catch (err) {
+        console.error('Failed to generate/send session string:', err.message);
+      }
+
       // Notify Owner the Bot is Live with System Status
       try {
-        const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
         const aliveMenu = `🤖 *LuffyTaro Engine is ALIVE!* 🚀\n\n` +
                           `Hey Chief! Your bot has successfully completed the handshake with WhatsApp.\n\n` +
                           `📊 *System Status:*\n` +
@@ -148,7 +161,6 @@ async function startBot() {
                           `_Everything is green. Your automation is active!_`;
         
         await sock.sendMessage(ownerJid, { text: aliveMenu });
-        console.log('📬 Startup confirmation message sent to owner.');
       } catch (err) {
         console.log('Unable to reach owner with startup message:', err.message);
       }
@@ -178,18 +190,14 @@ async function startBot() {
     }
   });
 
-  // ==========================================================
-  // 6. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP (NON-DESTRUCTIVE)
-  // ==========================================================
+  // ==========================================
+  // 6. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP
+  // ==========================================
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
-      if (!activeAdmin) {
-        console.log("Idle period: No active admin scheduled right now.");
-        return;
-      }
+      if (!activeAdmin) return;
       
-      // Maintain your list of group JIDs inside commands.js or config.js
       const targetGroupIds = ['12036314321321@g.us']; 
 
       const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™*\n\n` +
@@ -200,7 +208,7 @@ async function startBot() {
       for (const groupId of targetGroupIds) {
         try {
           await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(r => setTimeout(r, 2000)); // Delay between sends to prevent anti-spam flags
+          await new Promise(r => setTimeout(r, 2000)); 
         } catch (e) {
           console.log(`Failed to post to group ${groupId}:`, e.message);
         }
