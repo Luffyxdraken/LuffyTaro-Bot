@@ -106,8 +106,7 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
-  // ⚡ DYNAMICALLY FETCH LATEST WHATSAPP WEB VERSION TO PREVENT 405 ERROR
-  let version = [2, 3000, 1017531287]; // Solid fallback version
+  let version = [2, 3000, 1017531287]; // Fallback
   try {
     const { version: latestVersion, isLatest } = await fetchLatestWaWebVersion();
     version = latestVersion;
@@ -117,25 +116,22 @@ async function startBot() {
   }
 
   const sock = makeWASocket({
-    version, // Inject the correct version directly
+    version, 
     logger: pino({ level: 'silent' }), 
     auth: state,
-    browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard system array format
+    browser: ['Ubuntu', 'Chrome', '20.0.04'], 
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 15000,
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  // Connection Handler
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     
-    // 🔑 REQUEST PAIRING CODE SAFELY ONLY AFTER THE NETWORK INTERFACE IS ACTIVE
     if (!sock.authState.creds.registered && !connection) {
       const botPhone = CONFIG.BOT_NUMBER ? CONFIG.BOT_NUMBER.replace(/[^0-9]/g, '') : '';
       if (botPhone) {
-        // Safe 6-second delay to let Baileys stabilize the socket stream
         await delay(6000); 
         try {
           console.log(`🚀 Requesting pairing code for BOT phone number: +${botPhone}`);
@@ -143,36 +139,32 @@ async function startBot() {
           console.log('\n===================================================');
           console.log(`🔑 YOUR WHATSAPP PAIRING CODE: ${code}`);
           console.log('===================================================\n');
-          console.log(`👉 Open WhatsApp on (+${botPhone}) -> Linked Devices -> Link with Phone Number, and enter this code.`);
         } catch (err) {
           console.error('Failed to request pairing code:', err.message);
         }
-      } else {
-        console.log('❌ Error: CONFIG.BOT_NUMBER is not configured.');
       }
     }
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       console.log(`🔌 Connection closed. Code: ${statusCode}`);
-
-      if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-        console.log('❌ Session has expired. Please clear SESSION_ID and restart.');
-        return;
-      }
+      if (statusCode === DisconnectReason.loggedOut || statusCode === 401) return;
 
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
-        const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-        setTimeout(startBot, delayMs);
+        setTimeout(startBot, Math.min(1000 * Math.pow(2, reconnectAttempts), 30000));
       }
     } else if (connection === 'open') {
       reconnectAttempts = 0;
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
+      // Clean Owner Number securely to prevent double-91 formatting crash
+      let rawOwner = (CONFIG.OWNER_NUMBER || '917866052212').replace(/[^0-9]/g, '');
+      if (!rawOwner.startsWith('91') && rawOwner.length === 10) {
+        rawOwner = '91' + rawOwner;
+      }
+      const ownerJid = `${rawOwner}@s.whatsapp.net`;
 
-      // 🔄 AUTO-SESSION GENERATION (Sent directly to Owner's DM)
       try {
         const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
         if (fs.existsSync(credsPath)) {
@@ -180,35 +172,16 @@ async function startBot() {
           const base64Session = Buffer.from(credsRaw).toString('base64');
           
           const sessionMsg = `🔑 *YOUR NEW SESSION ID* 🔑\n\n` +
-                             `Because Render restarts every day, copy the text below and paste it as your *SESSION_ID* environment variable in Render Settings:\n\n` +
-                             `\`\`\`LuffyTaro;;;${base64Session}\`\`\`\n\n` +
-                             `_Once you add this to Render, the bot will stay connected forever without needing any more codes!_`;
+                             `\`\`\`LuffyTaro;;;${base64Session}\`\`\``;
           
           await sock.sendMessage(ownerJid, { text: sessionMsg });
-          console.log(`📬 Session credentials successfully sent to OWNER's WhatsApp: ${ownerJid}`);
         }
       } catch (err) {
-        console.error('Failed to generate/send session string:', err.message);
-      }
-
-      // Notify Owner the Bot is Live with System Status
-      try {
-        const aliveMenu = `🤖 *LuffyTaro Engine is ALIVE!* 🚀\n\n` +
-                          `Hey Chief! Your bot has successfully completed the handshake with WhatsApp.\n\n` +
-                          `📊 *System Status:*\n` +
-                          `• *Node Memory Limit:* 400MB (Safe-Cap)\n` +
-                          `• *Timezone Sync:* Indian Standard Time (IST)\n` +
-                          `• *Healthcheck Port:* 10000 (Render Map Ok)\n\n` +
-                          `_Everything is green. Your automation is active!_`;
-        
-        await sock.sendMessage(ownerJid, { text: aliveMenu });
-      } catch (err) {
-        console.log('Unable to reach owner with startup message:', err.message);
+        console.error('Failed to send session string:', err.message);
       }
     }
   });
 
-  // Message Handler (Preserving Command Plugins & Permissions)
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -231,31 +204,23 @@ async function startBot() {
     }
   });
 
-  // ==========================================
-  // 5. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP
-  // ==========================================
+  // Automated 15-Min Loop
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return;
-      
       const targetGroupIds = ['12036314321321@g.us']; 
-
       const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™*\n\n` +
                             `> ENTRY - 30/50/100 RS\n` +
                             `> PP - 60 /100/180 RS\n\n` +
                             `*_DM  +${activeAdmin} FOR SLOTS_* 🔥`;
 
       for (const groupId of targetGroupIds) {
-        try {
-          await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(r => setTimeout(r, 2000)); 
-        } catch (e) {
-          console.log(`Failed to post to group ${groupId}:`, e.message);
-        }
+        await sock.sendMessage(groupId, { text: lobbyMessage });
+        await new Promise(r => setTimeout(r, 2000));
       }
     } catch (err) {
-      console.log("Memory safety catch: Automated loop protected from crash.");
+      console.log("Protected Loop Thread.");
     }
   }, 15 * 60 * 1000);
 }
