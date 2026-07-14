@@ -1,4 +1,4 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, delay } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
@@ -76,10 +76,21 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
+  // ⚡ DYNAMICALLY FETCH LATEST WHATSAPP WEB VERSION TO PREVENT 405 ERROR
+  let version = [2, 3000, 1017531287]; // Solid fallback version
+  try {
+    const { version: latestVersion, isLatest } = await fetchLatestWaWebVersion();
+    version = latestVersion;
+    console.log(`🌐 Successfully loaded WhatsApp Web v${version.join('.')}. Latest: ${isLatest}`);
+  } catch (err) {
+    console.log(`⚠️ Failed fetching latest version. Using fallback: v${version.join('.')}`);
+  }
+
   const sock = makeWASocket({
+    version, // Inject the correct version directly
     logger: pino({ level: 'silent' }), 
     auth: state,
-    browser: ['Chrome (Ubuntu)', 'Chrome', '110.0.0'], 
+    browser: ['Ubuntu', 'Chrome', '20.0.04'], // Standard system array format
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 15000,
   });
@@ -90,7 +101,7 @@ async function startBot() {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     
-    // 🔑 REQUEST PAIRING CODE SAFELY ONLY AFTER THE NETWORK INTERFACE LOADS
+    // 🔑 REQUEST PAIRING CODE SAFELY ONLY AFTER THE NETWORK INTERFACE IS ACTIVE
     if (!sock.authState.creds.registered && !connection) {
       const botPhone = CONFIG.BOT_NUMBER ? CONFIG.BOT_NUMBER.replace(/[^0-9]/g, '') : '';
       if (botPhone) {
