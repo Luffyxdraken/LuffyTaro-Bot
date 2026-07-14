@@ -84,33 +84,32 @@ async function startBot() {
     keepAliveIntervalMs: 15000,
   });
 
-  // 🔑 PAIRING CODE GENERATOR
-  if (!sock.authState.creds.registered) {
-    // We use CONFIG.BOT_NUMBER to generate the pairing code
-    const botPhone = CONFIG.BOT_NUMBER ? CONFIG.BOT_NUMBER.replace(/[^0-9]/g, '') : '';
-    
-    if (botPhone) {
-      console.log(`🚀 Requesting pairing code for BOT phone number: +${botPhone}`);
-      await delay(5000); // 5-second delay to ensure transport layers are stable
-      try {
-        const code = await sock.requestPairingCode(botPhone);
-        console.log('\n===================================================');
-        console.log(`🔑 YOUR WHATSAPP PAIRING CODE: ${code}`);
-        console.log('===================================================\n');
-        console.log(`👉 Open WhatsApp on (+${botPhone}) -> Linked Devices -> Link with Phone Number, and enter this code.`);
-      } catch (err) {
-        console.error('Failed to request pairing code:', err.message);
-      }
-    } else {
-      console.log('❌ Error: CONFIG.BOT_NUMBER is not configured. Cannot request pairing code.');
-    }
-  }
-
   sock.ev.on('creds.update', saveCreds);
 
   // Connection Handler
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
+    
+    // 🔑 REQUEST PAIRING CODE SAFELY ONLY AFTER THE NETWORK INTERFACE LOADS
+    if (!sock.authState.creds.registered && !connection) {
+      const botPhone = CONFIG.BOT_NUMBER ? CONFIG.BOT_NUMBER.replace(/[^0-9]/g, '') : '';
+      if (botPhone) {
+        // Safe 6-second delay to let Baileys stabilize the socket stream
+        await delay(6000); 
+        try {
+          console.log(`🚀 Requesting pairing code for BOT phone number: +${botPhone}`);
+          const code = await sock.requestPairingCode(botPhone);
+          console.log('\n===================================================');
+          console.log(`🔑 YOUR WHATSAPP PAIRING CODE: ${code}`);
+          console.log('===================================================\n');
+          console.log(`👉 Open WhatsApp on (+${botPhone}) -> Linked Devices -> Link with Phone Number, and enter this code.`);
+        } catch (err) {
+          console.error('Failed to request pairing code:', err.message);
+        }
+      } else {
+        console.log('❌ Error: CONFIG.BOT_NUMBER is not configured.');
+      }
+    }
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
@@ -130,7 +129,6 @@ async function startBot() {
       reconnectAttempts = 0;
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      // All messages are sent directly to the OWNER_NUMBER
       const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
 
       // 🔄 AUTO-SESSION GENERATION (Sent directly to Owner's DM)
