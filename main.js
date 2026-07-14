@@ -1,4 +1,4 @@
-import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, delay } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
@@ -51,13 +51,12 @@ function initSession() {
     }
     const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
     try {
-      // Decode the Base64 session back into creds.json
       const base64Data = CONFIG.SESSION_ID.includes(';;;') 
         ? CONFIG.SESSION_ID.split(';;;')[1] 
         : CONFIG.SESSION_ID;
         
       const decoded = Buffer.from(base64Data, 'base64').toString('utf-8');
-      JSON.parse(decoded); // Verify it's valid JSON
+      JSON.parse(decoded); 
       fs.writeFileSync(credsPath, decoded);
       console.log(`⚙️ Session credentials successfully restored from Env.`);
     } catch (err) {
@@ -69,22 +68,7 @@ function initSession() {
 initSession();
 
 // ==========================================
-// 4. DYNAMIC QR TERMINAL/LINK PRINTER
-// ==========================================
-async function printQR(qr) {
-  console.log('\n=================== SCAN QR CODE ===================');
-  try {
-    const qrcodeTerminal = await import('qrcode-terminal');
-    qrcodeTerminal.default.generate(qr, { small: true });
-  } catch (e) {
-    // Silently fall back to the link if terminal printing is missing
-  }
-  console.log(`\n🔗 OR open this link to scan with your phone:\n👉 https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}\n`);
-  console.log('===================================================\n');
-}
-
-// ==========================================
-// 5. MAIN BOT ENGINE
+// 4. MAIN BOT ENGINE
 // ==========================================
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -95,34 +79,53 @@ async function startBot() {
   const sock = makeWASocket({
     logger: pino({ level: 'silent' }), 
     auth: state,
-    browser: ['Chrome', 'Windows', '10.0.0'], 
+    browser: ['Chrome (Ubuntu)', 'Chrome', '110.0.0'], // Matches pairing requirements
     connectTimeoutMs: 60000,
     keepAliveIntervalMs: 15000,
   });
+
+  // 🔑 PAIRING CODE GENERATOR
+  // If there is no existing session, ask WhatsApp for a pairing code instead of generating a QR.
+  if (!sock.authState.creds.registered) {
+    // Make sure your CONFIG.OWNER_NUMBER is set to your phone number in config.js (e.g., 917866052212)
+    const phoneNumber = CONFIG.OWNER_NUMBER ? CONFIG.OWNER_NUMBER.replace(/[^0-9]/g, '') : '';
+    
+    if (phoneNumber) {
+      console.log(`🚀 Requesting pairing code for phone number: +${phoneNumber}`);
+      await delay(3000); // Small pause for the engine to initialize
+      try {
+        const code = await sock.requestPairingCode(phoneNumber);
+        console.log('\n===================================================');
+        console.log(`🔑 YOUR WHATSAPP PAIRING CODE: ${code}`);
+        console.log('===================================================\n');
+        console.log('👉 Go to WhatsApp on your phone -> Settings -> Linked Devices -> Link with Phone Number instead, then type this code.');
+      } catch (err) {
+        console.error('Failed to request pairing code:', err.message);
+      }
+    } else {
+      console.log('❌ Error: CONFIG.OWNER_NUMBER is not configured. Cannot request pairing code.');
+    }
+  }
 
   sock.ev.on('creds.update', saveCreds);
 
   // Connection Handler
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    
-    if (qr) {
-      await printQR(qr);
-    }
+    const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       console.log(`🔌 Connection closed. Code: ${statusCode}`);
 
       if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
-        console.log('❌ Session has expired. Please clear SESSION_ID and scan new QR.');
+        console.log('❌ Session has expired. Please clear SESSION_ID and restart.');
         return;
       }
 
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         reconnectAttempts++;
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-        setTimeout(startBot, delay);
+        const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+        setTimeout(startBot, delayMs);
       }
     } else if (connection === 'open') {
       reconnectAttempts = 0;
@@ -130,18 +133,17 @@ async function startBot() {
       
       const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
 
-      // 🔄 AUTO-SESSION GENERATION (THE CORE FIX!)
+      // 🔄 AUTO-SESSION GENERATION (Keeps you connected forever)
       try {
         const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
         if (fs.existsSync(credsPath)) {
           const credsRaw = fs.readFileSync(credsPath, 'utf-8');
           const base64Session = Buffer.from(credsRaw).toString('base64');
           
-          // Send the generated session directly to the owner's WhatsApp DM
           const sessionMsg = `🔑 *YOUR NEW SESSION ID* 🔑\n\n` +
                              `Because Render restarts every day, copy the text below and paste it as your *SESSION_ID* environment variable in Render Settings:\n\n` +
                              `\`\`\`LuffyTaro;;;${base64Session}\`\`\`\n\n` +
-                             `_Once you add this to Render, the bot will stay connected forever without needing any more QR scans!_`;
+                             `_Once you add this to Render, the bot will stay connected forever without needing any more codes!_`;
           
           await sock.sendMessage(ownerJid, { text: sessionMsg });
           console.log('📬 Session credentials successfully sent to your WhatsApp!');
@@ -191,7 +193,7 @@ async function startBot() {
   });
 
   // ==========================================
-  // 6. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP
+  // 5. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP
   // ==========================================
   setInterval(async () => {
     try {
