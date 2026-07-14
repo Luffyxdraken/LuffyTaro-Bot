@@ -7,6 +7,36 @@ import { CONFIG } from './config.js';
 import { commands, verifyAuthority } from './plugins/commands.js';
 
 // ==========================================================
+// 0. BYPASS FOR RENDER FREE VERSION (SESSION ID RETRIEVER)
+// ==========================================================
+setTimeout(() => {
+  const paths = [
+    path.join(CONFIG.SESSION_DIR || './session', 'creds.json'),
+    './session/creds.json',
+    './auth_info/creds.json',
+    './creds.json'
+  ];
+  let found = false;
+  for (const p of paths) {
+    if (fs.existsSync(p)) {
+      try {
+        const creds = fs.readFileSync(p, 'utf-8');
+        console.log('\n=================== COPY THIS SESSION ID ===================\n');
+        console.log('LuffyTaro;;;' + Buffer.from(creds).toString('base64'));
+        console.log('\n============================================================\n');
+        found = true;
+        break;
+      } catch (e) {
+        console.log('[Bypass Error] Failed to read file:', e.message);
+      }
+    }
+  }
+  if (!found) {
+    console.log('\n[Bypass Status] Session files not found yet. The bot needs to be linked first!\n');
+  }
+}, 10000);
+
+// ==========================================================
 // 1. INSTANT PORT BINDING FOR RENDER (MUST RUN IMMEDIATELY)
 // ==========================================================
 const PORT = process.env.PORT || 10000;
