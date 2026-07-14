@@ -2,19 +2,19 @@ import { makeWASocket, useMultiFileAuthState, DisconnectReason } from '@whiskeys
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
-import http from 'http'; // Preserving HTTP Server for Render Healthcheck
+import http from 'http'; 
 import { CONFIG } from './config.js'; 
 import { commands, verifyAuthority } from './plugins/commands.js';
 
-// ==========================================
-// 1. RENDER PORT HEALTHCHECK SERVER (CRITICAL)
-// ==========================================
+// ==========================================================
+// 1. INSTANT PORT BINDING FOR RENDER (MUST RUN IMMEDIATELY)
+// ==========================================================
 const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('LuffyTaro Engine is Live and Running!');
-}).listen(PORT, () => {
-  console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
+  res.end('LuffyTaro Engine is running perfectly!');
+}).listen(PORT, '0.0.0.0', () => {
+  console.log(`📡 Render Healthcheck Port active on port ${PORT}`);
 });
 
 // ==========================================
@@ -38,39 +38,105 @@ function getActiveAdminForTime() {
   if (totalMinutes >= 1290 && totalMinutes <= 1425) {
     return '917866052212';
   }
-  return null; // Safe fallback if outside shift hours
+  return null; 
+}
+
+// Log scheduled shift on boot
+const currentScheduledAdmin = getActiveAdminForTime();
+console.log(`⏰ Time Sync (IST): Current active admin scheduled: ${currentScheduledAdmin || 'None (Idle period)'}`);
+
+// ==========================================
+// 3. SESSION INITIALIZATION
+// ==========================================
+function initSession() {
+  if (CONFIG.SESSION_ID) {
+    if (!fs.existsSync(CONFIG.SESSION_DIR)) {
+      fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
+    }
+    const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
+    try {
+      const base64Data = CONFIG.SESSION_ID.includes(';;;') 
+        ? CONFIG.SESSION_ID.split(';;;')[1] 
+        : CONFIG.SESSION_ID;
+        
+      const decoded = Buffer.from(base64Data, 'base64').toString('utf-8');
+      JSON.parse(decoded); // Validate JSON format
+      fs.writeFileSync(credsPath, decoded);
+      console.log(`⚙️ Session credentials verified and restored. Size: ${decoded.length} bytes`);
+    } catch (err) {
+      console.error('❌ Session restoration failed. Your SESSION_ID string may be corrupted:', err.message);
+    }
+  }
+}
+
+initSession();
+
+// ==========================================
+// 4. DYNAMIC QR TERMINAL/LINK PRINTER
+// ==========================================
+async function printQR(qr) {
+  console.log('\n=================== SCAN QR CODE ===================');
+  try {
+    const qrcodeTerminal = await import('qrcode-terminal');
+    qrcodeTerminal.default.generate(qr, { small: true });
+  } catch (e) {
+    console.log('💡 Tip: Install "qrcode-terminal" to render the QR directly in your terminal.');
+  }
+  console.log(`\n🔗 OR open this link to scan with your phone:\n👉 https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}\n`);
+  console.log('===================================================\n');
 }
 
 // ==========================================
-// 3. MAIN BOT ENGINE
+// 5. MAIN BOT ENGINE
 // ==========================================
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
   const sock = makeWASocket({
-    logger: pino({ level: 'silent' }), // Suppressed logs to protect 512MB RAM Limit
+    logger: pino({ level: 'silent' }), // Completely silent to save system memory
     auth: state,
-    browser: ['Chrome', 'Windows', '10.0.0'], // Prevents bot fingerprinting
-    printQRInTerminal: true,
+    browser: ['Chrome', 'Windows', '10.0.0'], // Mimics Windows Desktop client
     connectTimeoutMs: 60000,
-    keepAliveIntervalMs: 10000,
+    keepAliveIntervalMs: 15000,
   });
 
   sock.ev.on('creds.update', saveCreds);
 
   // Connection Handler
   sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+    
+    if (qr) {
+      await printQR(qr);
+    }
     
     if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      if (shouldReconnect) {
-        setTimeout(startBot, 5000);
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const reason = lastDisconnect?.error?.message || 'Connection lost';
+      console.log(`🔌 Connection closed. Reason: ${reason} (Code: ${statusCode})`);
+
+      // Avoid infinite loop crashes on terminal or expired sessions
+      if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+        console.log('❌ Session has expired or logged out. Resetting connection attempts. Please clear SESSION_ID and scan new QR.');
+        return;
+      }
+
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts++;
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000); // Exponential Backoff
+        console.log(`🔄 Reconnecting in ${delay / 1000}s... (Attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+        setTimeout(startBot, delay);
+      } else {
+        console.log('❌ Maximum reconnect attempts reached. Waiting for manual restart.');
       }
     } else if (connection === 'open') {
+      reconnectAttempts = 0; // Reset safe connection attempt counter
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      // Send "I am Alive" confirmation message to the owner
+      // Notify Owner the Bot is Live with System Status
       try {
         const ownerJid = `${CONFIG.OWNER_NUMBER || '917866052212'}@s.whatsapp.net`;
         const aliveMenu = `🤖 *LuffyTaro Engine is ALIVE!* 🚀\n\n` +
@@ -82,9 +148,9 @@ async function startBot() {
                           `_Everything is green. Your automation is active!_`;
         
         await sock.sendMessage(ownerJid, { text: aliveMenu });
-        console.log('📬 Startup message dispatched to owner.');
+        console.log('📬 Startup confirmation message sent to owner.');
       } catch (err) {
-        console.log('Failed to send startup verification to owner:', err.message);
+        console.log('Unable to reach owner with startup message:', err.message);
       }
     }
   });
@@ -112,9 +178,9 @@ async function startBot() {
     }
   });
 
-  // ==========================================
-  // 4. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP
-  // ==========================================
+  // ==========================================================
+  // 6. MEMORY-SAFE 15-MINUTE AUTOMATION LOOP (NON-DESTRUCTIVE)
+  // ==========================================================
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
@@ -123,7 +189,7 @@ async function startBot() {
         return;
       }
       
-      // Note: Make sure to keep your authorized group ID list in commands.js or config.js
+      // Maintain your list of group JIDs inside commands.js or config.js
       const targetGroupIds = ['12036314321321@g.us']; 
 
       const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™*\n\n` +
@@ -134,7 +200,7 @@ async function startBot() {
       for (const groupId of targetGroupIds) {
         try {
           await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(r => setTimeout(r, 2000)); // Delay between messages to protect account health
+          await new Promise(r => setTimeout(r, 2000)); // Delay between sends to prevent anti-spam flags
         } catch (e) {
           console.log(`Failed to post to group ${groupId}:`, e.message);
         }
