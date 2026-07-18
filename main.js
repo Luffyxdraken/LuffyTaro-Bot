@@ -7,6 +7,7 @@ import http from 'http';
 import { CONFIG } from './config.js'; 
 import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage, privateUsers, toggleBroadcastLoop, isLoopActive } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
+import { getConfig } from './sql/database.js';
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
@@ -45,10 +46,11 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 15-Minute Broadcast Loop
+  // 🕒 15-Minute Dynamic Broadcast Loop (Now toggled securely via commands!)
   setInterval(async () => {
     try {
-      if (!isLoopActive()) return; 
+      if (!isLoopActive()) return; // Controlled via admin .activate / .deactivate commands
+      
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return; 
       const targetGroupIds = getAuthorizedPosterGroups();
@@ -75,6 +77,15 @@ async function startBot() {
     
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
+      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
+      if (rawOwner) {
+        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
+        const ownerJid = `${rawOwner}@s.whatsapp.net`;
+        try {
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
+          await sock.sendMessage(ownerJid, { text: aliveAlert });
+        } catch (err) {}
+      }
     }
   });
 
@@ -89,6 +100,7 @@ async function startBot() {
     if (!msg.message || msg.key.fromMe) return;
 
     const sender = msg.key.participant || msg.key.remoteJid;
+    const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
     if (!text) return;
@@ -98,32 +110,33 @@ async function startBot() {
 
     if (privateUsers.includes(cleanSenderNum)) return; 
 
-    // ⚡ Pipeline 1: Command Prefix Execution Block (Stops execution immediately if matched)
+    // ⚡ Pipeline 1: Command Prefix Execution Block (Strict Admin Management Tools)
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
       if (commands[commandName]) {
+        // Restrict structural back-end controls exclusively to system admins
         const privilegedActions = ['authorize', 'unauthorize', 'private', 'public', 'iamadmin', 'activate', 'deactivate', 'status'];
         if (privilegedActions.includes(commandName) && !isOwnerOrAdmin) {
-          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED*\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin privileges.` });
+          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
           return;
         }
 
         try { 
           await commands[commandName](sock, msg, args, text); 
-          return; // Strictly stop execution here to prevent double processing!
+          return;
         } catch (err) { 
           console.error(err); 
         }
       }
     }
 
-    // 🧠 Pipeline 2: Natural Language Fallback (Runs ONLY if no direct command prefix matched)
+    // 🧠 Pipeline 2: Natural Language & Broad Support Fallback (No dots required)
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
-      console.error("Critical routing breakdown:", e);
+      console.error("AI execution fallback channel error:", e);
     }
   });
 }
