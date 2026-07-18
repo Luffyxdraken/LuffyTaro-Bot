@@ -58,7 +58,10 @@ export async function handleGroupParticipants(sock, update) {
   
   let config = { welcome_type: '1', goodbye_type: '1' };
   try {
-    config = getConfig(id) || config;
+    const dbConfig = getConfig(id);
+    if (dbConfig) {
+      config = dbConfig;
+    }
   } catch (e) {
     // Falls back seamlessly if database configuration queries encounter an anomaly
   }
@@ -67,7 +70,8 @@ export async function handleGroupParticipants(sock, update) {
     const jidNum = user.split('@')[0];
 
     if (action === 'add') {
-      if (config.welcome_type === '1' || config.welcome_type === '2') {
+      // Bypasses block if db record value explicitly evaluates to 'off' or '0'
+      if (config.welcome_type === '1' || config.welcome_type === '2' || config.welcome_type === 'on') {
         const title = "🏴‍☠️ WELCOME TO THE TEAM 🏴‍☠️";
         const subtitle = `@${jidNum}`;
         const captionText = `🏴‍☠️ Welcome @${jidNum} to the paid scrims arena! Read the rules and ready up.`;
@@ -81,8 +85,9 @@ export async function handleGroupParticipants(sock, update) {
       }
     } 
     
-    else if (action === 'remove') {
-      if (config.goodbye_type === '1' || config.goodbye_type === '2') {
+    // 🚪 Catches both manual departures ('leave') and admin kicks ('remove')
+    else if (action === 'remove' || action === 'leave') {
+      if (config.goodbye_type === '1' || config.goodbye_type === '2' || config.goodbye_type === 'on') {
         const title = "❌ ELIMINATED FROM SCRIMS ❌";
         const subtitle = `@${jidNum}`;
         const captionText = `❌ @${jidNum} has left the squad battlefield.`;
