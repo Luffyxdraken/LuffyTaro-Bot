@@ -1,9 +1,9 @@
 import { CONFIG } from '../config.js'; 
 import { updateConfig } from '../sql/database.js'; 
-import { GoogleGenAI } from '@google/genai'; // Assumes installation of standard Google Gen AI package
+import { GoogleGenAI } from '@google/genai';
 
-// Initialize Gemini Core Engine
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || CONFIG.GEMINI_KEY || "YOUR_KEY" });
+// Corrected SDK client initialization format
+const ai = new GoogleGenAI(); 
 
 const AUTHORIZED_ADMINS = [
   "917866052212", 
@@ -15,9 +15,12 @@ const AUTHORIZED_ADMINS = [
 export let privateUsers = []; 
 let activeAdmin = "917866052212"; 
 let authorizedGroups = [];
+let loopRunningStatus = true; // Tracks whether the loop engine is active
 
 export function getActiveAdminForTime() { return activeAdmin; }
 export function getAuthorizedPosterGroups() { return authorizedGroups; }
+export function isLoopActive() { return loopRunningStatus; }
+export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 
 export function verifyAuthority(sender) { 
   if (!sender) return false;
@@ -26,26 +29,70 @@ export function verifyAuthority(sender) {
 }
 
 export function buildLobbyMessage() {
-  return `🏴‍☠️ *PIRATES LOBBY BROADCAST*\n───────────────────────────\nSlots filling fast! Drop your lineups now to secure your entry spot!`;
+  return `🏴‍☠️ *PIRATES LOBBY BROADCAST*\n───────────────────────────\nSlots filling fast! Drop your lineups now!`;
 }
 
 export const commands = {
   // --- 🌍 INFO TEXT DATA OUTPUTS ---
-  menu: `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n• \`menu\` / \`help\` - Show this master command layout.\n• \`guidelines\` / \`rules\` - Display match rules and guidelines.\n• \`slots\` - Query open matches and available slot layouts.\n• \`tournament\` - Details regarding ongoing official tournaments.\n• \`price\` - List entry fees and pricing sheets for paid scrims.\n• \`schedule\` - View daily and weekly match timings.\n• \`payout\` - Information on prize distribution and timelines.\n• \`owner\` - Display developer connection cards.`,
+  menu: async (sock, msg) => {
+    const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n• \`menu\` / \`help\` - Show this master layout.\n• \`guidelines\` / \`rules\` - Match rules.\n• \`slots\` - Query open matches.\n• \`tournament\` - Details regarding tourneys.\n• \`price\` - Fee sheets for paid scrims.\n• \`schedule\` - Daily match timings.\n• \`payout\` - Prize distribution terms.\n\n👑 *Admin Command Panel* (Requires \`.\` prefix):\n• \`.iamadmin\` - Check authorization tags.\n• \`.activate\` - Turn broadcast loops ON.\n• \`.deactivate\` - Turn broadcast loops OFF.\n• \`.status\` - Get engine health metrics.\n• \`.private [num]\` / \`.public [num]\``;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
+  help: async (sock, msg) => { await commands.menu(sock, msg); },
 
-  guidelines: `🏴‍☠️ *PIRATES TOURNAMENT RULES*\n───────────────────────────\n1. Strictly no emulator allowed unless explicitly noted.\n2. Hacks, scripts, or teaming up results in an instant permanent ban.\n3. Payout processing takes roughly 10-15 minutes post-match review.`,
+  guidelines: async (sock, msg) => {
+    const text = `🏴‍☠️ *PIRATES TOURNAMENT RULES*\n───────────────────────────\n1. Strictly no emulator allowed.\n2. Hacks, scripts, or teaming up results in an instant ban.\n3. Payout processing takes roughly 10-15 minutes post-match review.`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
+  rules: async (sock, msg) => { await commands.guidelines(sock, msg); },
 
-  slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• Match 1 (06:00 PM): 14/25 Slots Filled\n• Match 2 (08:00 PM): 19/25 Slots Filled\n• Match 3 (10:00 PM): 05/25 Slots Filled\n\n💬 Send your team lineup here to secure a position now!`,
+  slots: async (sock, msg) => {
+    const text = `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• Match 1 (06:00 PM): 14/25 Slots Filled\n• Match 2 (08:00 PM): 19/25 Slots Filled\n• Match 3 (10:00 PM): 05/25 Slots Filled\n\n💬 Send your team lineup here to secure a position now!`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
 
-  tournament: `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: ₹10,000 RS\n• Total Teams: 48 Lineups Max\n• Registration: Closing soon.\n\nAsk for 'price' to check structural entrance fees.`,
+  tournament: async (sock, msg) => {
+    const text = `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: ₹10,000 RS\n• Total Teams: 48 Lineups Max\n• Registration: Closing soon.`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
 
-  price: `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single Match Entry: ₹30 RS per lineup\n• Daily Pass (3 Matches): ₹80 RS\n• Weekly Season Pass: ₹500 RS\n\nDrop your lineup to get started right away.`,
+  price: async (sock, msg) => {
+    const text = `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single Match Entry: ₹30 RS per lineup\n• Daily Pass (3 Matches): ₹80 RS\n• Weekly Season Pass: ₹500 RS`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
 
-  schedule: `⏰ *DAILY MATCH TIMETABLE*\n───────────────────────────\n• 🎮 Map 1 (Bermuda): 06:00 PM IST\n• 🎮 Map 2 (Purgatory): 08:00 PM IST\n• 🎮 Map 3 (Kalahari): 10:00 PM IST\n\nRoom details are sent out exactly 15 minutes before launch time.`,
+  schedule: async (sock, msg) => {
+    const text = `⏰ *DAILY MATCH TIMETABLE*\n───────────────────────────\n• 🎮 Map 1 (Bermuda): 06:00 PM IST\n• 🎮 Map 2 (Purgatory): 08:00 PM IST\n• 🎮 Map 3 (Kalahari): 10:00 PM IST\n\nRoom details are sent out exactly 15 minutes before launch time.`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
 
-  payout: `💸 *PRIZE DISTRIBUTION SYSTEM*\n───────────────────────────\n• Winner Take All structures clear inside 15 minutes.\n• Payments processed through UPI, GPay, and PhonePe.\n• Screenshots of placements must be dropped in the main group right as you finish.`,
+  payout: async (sock, msg) => {
+    const text = `💸 *PRIZE DISTRIBUTION SYSTEM*\n───────────────────────────\n• Winner Take All structures clear inside 15 minutes.\n• Payments processed through UPI, GPay, and PhonePe.`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
 
-  // --- 🛡️ SECURE INFRASTRUCTURE COMMANDS (Prefix Managed) ---
+  // --- 👑 RESTORED ADMIN ONLY COMMAND ENGINE BLOCK ---
+  iamadmin: async (sock, msg) => {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    await sock.sendMessage(msg.key.remoteJid, { text: `🛡️ *AUTHORIZATION METRICS*\n───────────────────────────\nIdentity Verified! Admin Number \`${cleanNum}\` holds full structural management privileges.` });
+  },
+
+  activate: async (sock, msg) => {
+    toggleBroadcastLoop(true);
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *BROADCAST LOOP ONLINE*\n───────────────────────────\nThe automated 15-minute matchmaking lobby loop engine has been successfully started.` });
+  },
+
+  deactivate: async (sock, msg) => {
+    toggleBroadcastLoop(false);
+    await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ *BROADCAST LOOP HALTED*\n───────────────────────────\nThe automated 15-minute matchmaking lobby loop engine has been paused.` });
+  },
+
+  status: async (sock, msg) => {
+    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• **Broadcaster Loop:** ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• **Authorized Targets:** ${authorizedGroups.length} Active Groups\n• **Ignored Privacy Targets:** ${privateUsers.length} Users`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
+
   authorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
     if (!authorizedGroups.includes(id)) authorizedGroups.push(id);
@@ -75,73 +122,60 @@ export const commands = {
   },
 
   // ==========================================
-  // 🤖 THE INTELLIGENT GEMINI AI PIPELINE
+  // 🤖 STABILIZED DYNAMIC AI HANDLING CHANNEL
   // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
     const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
 
-    // 1. Direct Keywords mapping fallback (Fast track without hitting AI tokens)
-    if (lowerMessage === 'help' || lowerMessage === 'menu') return await sock.sendMessage(targetJid, { text: commands.menu });
-    if (lowerMessage === 'price') return await sock.sendMessage(targetJid, { text: commands.price });
-    if (lowerMessage === 'slots') return await sock.sendMessage(targetJid, { text: commands.slots });
-    if (lowerMessage === 'rules' || lowerMessage === 'guidelines') return await sock.sendMessage(targetJid, { text: commands.guidelines });
-    if (lowerMessage === 'schedule') return await sock.sendMessage(targetJid, { text: commands.schedule });
-    if (lowerMessage === 'tournament') return await sock.sendMessage(targetJid, { text: commands.tournament });
-    if (lowerMessage === 'payout') return await sock.sendMessage(targetJid, { text: commands.payout });
-    if (lowerMessage === 'owner') {
-      return await sock.sendMessage(targetJid, { text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\nManaged by: wa.me/${ownerNum}` });
-    }
+    // Direct Text Router (No dots needed for public info)
+    if (lowerMessage === 'help' || lowerMessage === 'menu') return await commands.menu(sock, msg);
+    if (lowerMessage === 'price' || lowerMessage === 'fee') return await commands.price(sock, msg);
+    if (lowerMessage === 'slots') return await commands.slots(sock, msg);
+    if (lowerMessage === 'rules' || lowerMessage === 'guidelines') return await commands.guidelines(sock, msg);
+    if (lowerMessage === 'schedule' || lowerMessage === 'time') return await commands.schedule(sock, msg);
+    if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
+    if (lowerMessage === 'payout') return await commands.payout(sock, msg);
 
-    // 2. High Intelligence Gemini Engine Routing
+    // Call Gemini with proper authorization layout configuration
     try {
       const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/200747358617611`;
       
-      const aiPrompt = `
-        You are LuffyTaro Bot, the smart AI assistant for "Pirates Paid Scrims". 
-        Your job is to answer the user contextually in any language or slang they use (Hindi, English, Hinglish, etc.).
-        
-        Here is the tournament data data sheet you know:
-        - Menu/Help: ${commands.menu}
-        - Guidelines/Rules: ${commands.guidelines}
-        - Slots info: ${commands.slots}
-        - Tournament: ${commands.tournament}
-        - Prices: ${commands.price}
-        - Match Schedule: ${commands.schedule}
-        - Payout Methods: ${commands.payout}
-
-        If the user is saying hello, hi, greeting you, asking a question, or misspelling words (e.g. "prc", "schdule", "hlp"), classify what they want.
-        - If they want a specific detail (like prices, rules, slots), summarize it or print it perfectly in character.
-        - If they are greeting you or asking how to participate, answer warmly, explain things, and explicitly mention they should join the official channel.
-        
-        Keep your tone pirate-themed, confident, and direct. User message: "${userMessage}"
-      `;
-
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: aiPrompt,
+        contents: `You are LuffyTaro Bot, the dynamic pirate-themed automated support assistant for "Pirates Paid Scrims". 
+        Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.).
+        
+        Information sheet rules:
+        - Rules: Entry is ₹30/match, Daily Pass is ₹80, Season Pass is ₹500.
+        - Maps: Bermuda 6PM, Purgatory 8PM, Kalahari 10PM.
+        - Security: No emulators, no hacks, bans are permanent.
+        
+        If the user is asking about slots, pricing, time schedules, or saying hello/hi, clarify the details concisely. Always sound bold and clear.
+        User prompt text: "${userMessage}"`,
       });
 
-      let replyText = response.text || "🏴‍☠️ Captain, my connection wavered. Try asking that again or type 'menu'!";
-      
-      // Force append channel reference explicitly if a greeting or participation inquiry occurs
-      const greetingGaps = ['hi', 'hello', 'hey', 'join', 'parti', 'start', 'bro', 'sir', 'setup'];
-      if (greetingGaps.some(word => lowerMessage.includes(word))) {
-        if (!replyText.includes('200747358617611')) {
-          replyText += channelAlertInfo;
-        }
+      let replyText = response.text || "";
+      if (!replyText) throw new Error("Empty AI response buffer");
+
+      // Add branding link on introductory greetings or onboarding messages
+      const introWords = ['hi', 'hello', 'hey', 'join', 'participate', 'start', 'how'];
+      if (introWords.some(word => lowerMessage.includes(word)) && !replyText.includes('200747358617611')) {
+        replyText += channelAlertInfo;
       }
 
       await sock.sendMessage(targetJid, { text: replyText });
 
     } catch (err) {
-      console.error("Gemini Failure, using structured word match backup:", err);
-      // Absolute failsafe structural keyword checker
-      if (lowerMessage.includes('pric') || lowerMessage.includes('fees') || lowerMessage.includes('paisa')) {
-        await sock.sendMessage(targetJid, { text: commands.price });
+      console.error("Gemini processing fault, dropping to direct keyword checks:", err);
+      // Clean fallback if environment tokens aren't active or setup breaks
+      if (lowerMessage.includes('price') || lowerMessage.includes('fee')) {
+        await commands.price(sock, msg);
+      } else if (lowerMessage.includes('slot')) {
+        await commands.slots(sock, msg);
       } else {
-        await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey! Drop your question or query here. You can type *menu* anytime to view pricing, timelines, slots, and schedules directly without using dots!` });
+        await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/200747358617611` });
       }
     }
   }
