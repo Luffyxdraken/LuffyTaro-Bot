@@ -1,40 +1,10 @@
+import http from 'http'; 
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
 import path from 'path';
-import http from 'http'; 
 import { CONFIG } from './config.js'; 
-import { commands, verifyAuthority } from './plugins/commands.js';
-
-// ==========================================================
-// 0. BYPASS FOR RENDER FREE VERSION (SESSION ID RETRIEVER)
-// ==========================================================
-setTimeout(() => {
-  const paths = [
-    path.join(CONFIG.SESSION_DIR || './session', 'creds.json'),
-    './session/creds.json',
-    './auth_info/creds.json',
-    './creds.json'
-  ];
-  let found = false;
-  for (const p of paths) {
-    if (fs.existsSync(p)) {
-      try {
-        const creds = fs.readFileSync(p, 'utf-8');
-        console.log('\n=================== COPY THIS SESSION ID ===================\n');
-        console.log('LuffyTaro;;;' + Buffer.from(creds).toString('base64'));
-        console.log('\n============================================================\n');
-        found = true;
-        break;
-      } catch (e) {
-        console.log('[Bypass Error] Failed to read file:', e.message);
-      }
-    }
-  }
-  if (!found) {
-    console.log('\n[Bypass Status] Session files not found yet. The bot needs to be linked first!\n');
-  }
-}, 10000);
+import { commands, verifyAuthority, getActiveAdminForTime } from './plugins/commands.js';
 
 // ==========================================================
 // 1. INSTANT PORT BINDING FOR RENDER (MUST RUN IMMEDIATELY)
@@ -48,31 +18,7 @@ http.createServer((req, res) => {
 });
 
 // ==========================================
-// 2. INDIAN STANDARD TIME (IST) ROUTER
-// ==========================================
-function getActiveAdminForTime() {
-  const options = { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false };
-  const formatter = new Intl.DateTimeFormat('en-US', options);
-  const [hour, minute] = formatter.format(new Date()).split(':').map(Number);
-  const totalMinutes = hour * 60 + minute;
-
-  // Admin 1: 10:30 AM - 11:45 AM & 12:30 PM - 2:45 PM
-  if ((totalMinutes >= 630 && totalMinutes <= 705) || (totalMinutes >= 750 && totalMinutes <= 885)) {
-    return '919158210010';
-  }
-  // Admin 2: 3:30 PM - 5:45 PM & 6:30 PM - 8:45 PM
-  if ((totalMinutes >= 930 && totalMinutes <= 1065) || (totalMinutes >= 1110 && totalMinutes <= 1245)) {
-    return '919954865200';
-  }
-  // Admin 3: 9:30 PM - 11:45 PM
-  if (totalMinutes >= 1290 && totalMinutes <= 1425) {
-    return '917866052212';
-  }
-  return null; 
-}
-
-// ==========================================
-// 3. SESSION INITIALIZATION & RESTORE
+// 2. SESSION INITIALIZATION & RESTORE
 // ==========================================
 function initSession() {
   if (CONFIG.SESSION_ID) {
@@ -98,7 +44,7 @@ function initSession() {
 initSession();
 
 // ==========================================
-// 4. MAIN BOT ENGINE
+// 3. MAIN BOT ENGINE
 // ==========================================
 let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
@@ -106,7 +52,7 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   
-  let version = [2, 3000, 1017531287]; // Fallback
+  let version = [2, 3000, 1017531287]; 
   try {
     const { version: latestVersion, isLatest } = await fetchLatestWaWebVersion();
     version = latestVersion;
@@ -157,28 +103,6 @@ async function startBot() {
     } else if (connection === 'open') {
       reconnectAttempts = 0;
       console.log('✅ LuffyTaro Engine Connected Successfully!');
-      
-      // Clean Owner Number securely to prevent double-91 formatting crash
-      let rawOwner = (CONFIG.OWNER_NUMBER || '917866052212').replace(/[^0-9]/g, '');
-      if (!rawOwner.startsWith('91') && rawOwner.length === 10) {
-        rawOwner = '91' + rawOwner;
-      }
-      const ownerJid = `${rawOwner}@s.whatsapp.net`;
-
-      try {
-        const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
-        if (fs.existsSync(credsPath)) {
-          const credsRaw = fs.readFileSync(credsPath, 'utf-8');
-          const base64Session = Buffer.from(credsRaw).toString('base64');
-          
-          const sessionMsg = `🔑 *YOUR NEW SESSION ID* 🔑\n\n` +
-                             `\`\`\`LuffyTaro;;;${base64Session}\`\`\``;
-          
-          await sock.sendMessage(ownerJid, { text: sessionMsg });
-        }
-      } catch (err) {
-        console.error('Failed to send session string:', err.message);
-      }
     }
   });
 
@@ -209,7 +133,11 @@ async function startBot() {
     try {
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return;
-      const targetGroupIds = ['12036314321321@g.us']; 
+      
+      // Pull group IDs dynamically from your commands staging file
+      const targetGroupIds = commands.getAuthorizedPosterGroups ? commands.getAuthorizedPosterGroups() : []; 
+      if (targetGroupIds.length === 0) return;
+
       const lobbyMessage = `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™*\n\n` +
                             `> ENTRY - 30/50/100 RS\n` +
                             `> PP - 60 /100/180 RS\n\n` +
@@ -220,7 +148,7 @@ async function startBot() {
         await new Promise(r => setTimeout(r, 2000));
       }
     } catch (err) {
-      console.log("Protected Loop Thread.");
+      console.log("Protected Loop Thread Error:", err.message);
     }
   }, 15 * 60 * 1000);
 }
