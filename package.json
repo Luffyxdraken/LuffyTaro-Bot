@@ -5,13 +5,18 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "start": "node main.js"
+    "start": "node main.js",
+    "build": "npm install"
+  },
+  "engines": {
+    "node": "22.x"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.6.0",
+    "better-sqlite3": "^11.8.0",
     "canvas": "^2.11.2",
     "pino": "^9.0.0",
     "qrcode-terminal": "^0.12.0"
