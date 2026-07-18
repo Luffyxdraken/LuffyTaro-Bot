@@ -2,12 +2,13 @@ import { CONFIG } from '../config.js';
 import { updateConfig } from '../sql/database.js'; 
 
 // ==========================================
-// 👥 MULTI-ADMIN SECURITY ENGINE (FIXED)
+// 👥 MULTI-ADMIN SECURITY ENGINE (HYBRID FIX)
 // ==========================================
 const AUTHORIZED_ADMINS = [
   "917866052212", 
   "919158210010", 
-  "919954865200"
+  "919954865200",
+  "200747358617611" // 🌟 Your unique Business Channel ID added here directly!
 ];
 
 export let privateUsers = []; 
@@ -17,15 +18,14 @@ let authorizedGroups = [];
 export function getActiveAdminForTime() { return activeAdmin; }
 export function getAuthorizedPosterGroups() { return authorizedGroups; }
 
-// ⚡ PROVEN FIX: Cleans out device tags (:1, :2, etc.) and accurately checks admin membership
 export function verifyAuthority(sender) { 
   if (!sender) return false;
   
-  // Strip suffixes and extract only the pure digits from the sender ID
+  // Clean out device tags and pull the pure ID string
   const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   
-  // Check if the cleaned number matches or ends with any of your master admin strings
-  return AUTHORIZED_ADMINS.some(adminNum => cleanNum.endsWith(adminNum) || adminNum.endsWith(cleanNum));
+  // Match check handles standard numbers AND your distinct channel sequence smoothly
+  return AUTHORIZED_ADMINS.some(adminNum => cleanNum.includes(adminNum) || adminNum.includes(cleanNum));
 }
 
 export function buildLobbyMessage() {
