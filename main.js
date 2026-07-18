@@ -66,9 +66,28 @@ async function startBot() {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
+    
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       if (statusCode !== DisconnectReason.loggedOut) setTimeout(() => startBot(), 5000);
+    }
+    
+    // 🔔 DISPATCH "I AM ALIVE" STATUS NOTIFICATION TO OWNER
+    if (connection === 'open') {
+      console.log('✅ LuffyTaro Engine Connected Successfully!');
+      
+      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+      if (!rawOwner.startsWith('91') && rawOwner.length === 10) {
+        rawOwner = '91' + rawOwner;
+      }
+      const ownerJid = `${rawOwner}@s.whatsapp.net`;
+
+      try {
+        const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n───────────────────────────\n\n⚡ *System Check:* ONLINE\n🖥️ *Host State:* Running on Render\n📦 *Modules:* Restored & Ready\n\n🏴‍☠️ _Captain, I am alive and fully operational! The 15-minute lobby loops are armed._`;
+        await sock.sendMessage(ownerJid, { text: aliveAlert });
+      } catch (err) {
+        console.error('⚠️ Failed to deliver operational status message to owner:', err.message);
+      }
     }
   });
 
@@ -116,7 +135,6 @@ async function startBot() {
       
       if (targetCheckHub && targetCheckHub !== "None") {
         try {
-          // Force fetch the live community roster directly from WhatsApp
           const metadata = await sock.groupMetadata(targetCheckHub);
           const cleanSenderId = sender.split('@')[0].split(':')[0];
           
@@ -125,15 +143,13 @@ async function startBot() {
             return cleanParticipantId === cleanSenderId;
           });
         } catch (e) {
-          // If the group doesn't exist or isn't loaded yet, default to false to protect your gate
           userIsInMainGroup = false;
         }
       } else {
-        // If no main group ID is assigned yet, allow chatting
         userIsInMainGroup = true; 
       }
     } else {
-      userIsInMainGroup = true; // Admins skip verification entirely
+      userIsInMainGroup = true; 
     }
 
     // 🚫 REJECTION ACTION FOR EXTERNAL PLAYERS
