@@ -1,15 +1,14 @@
 import { CONFIG } from '../config.js'; 
 import { GoogleGenAI } from '@google/genai';
 
-// FIXED: Initialize the SDK with an empty configuration object to bypass the project check
-// It will automatically pick up process.env.GEMINI_API_KEY safely!
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY }); 
+// FIXED: Correct initialization syntax for the official new @google/genai SDK.
+// It will automatically pick up the process.env.GEMINI_API_KEY from your Render dashboard settings.
+const ai = new GoogleGenAI(); 
 
 const AUTHORIZED_ADMINS = [
   "917866052212", 
   "919158210010", 
-  "919954865200",
-  "200747358617611" 
+  "919954865200"
 ];
 
 export let privateUsers = []; 
@@ -71,7 +70,7 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
 
-  // --- 👑 ADMIN REGISTRY ENGINE ---
+  // --- 👑 ADMIN MANAGEMENT ENGINE ---
   iamadmin: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
@@ -121,10 +120,14 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `🔓 User *wa.me/${targetNum}* is now set to PUBLIC.` });
   },
 
+  // ==========================================
+  // 🤖 STABILIZED DYNAMIC AI HANDLING CHANNEL
+  // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
 
+    // Direct structural matching checks (Runs instantly without spending AI resource limits)
     if (lowerMessage === 'help' || lowerMessage === 'menu') return await commands.menu(sock, msg);
     if (lowerMessage === 'price' || lowerMessage === 'fee') return await commands.price(sock, msg);
     if (lowerMessage === 'slots') return await commands.slots(sock, msg);
@@ -133,9 +136,10 @@ export const commands = {
     if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
     if (lowerMessage === 'payout') return await commands.payout(sock, msg);
 
+    // FIXED: Your absolute correct new WhatsApp channel linkage update
+    const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F`;
+
     try {
-      const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/200747358617611`;
-      
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: `You are LuffyTaro Bot, the dynamic pirate-themed automated support assistant for "Pirates Paid Scrims". 
@@ -153,8 +157,8 @@ export const commands = {
       let replyText = response.text || "";
       if (!replyText) throw new Error("Empty AI response buffer");
 
-      const introWords = ['hi', 'hello', 'hey', 'join', 'participate', 'start', 'how'];
-      if (introWords.some(word => lowerMessage.includes(word)) && !replyText.includes('200747358617611')) {
+      const introWords = ['hi', 'hello', 'hey', 'join', 'participate', 'start', 'how', 'who are you', 'who made you'];
+      if (introWords.some(word => lowerMessage.includes(word)) && !replyText.includes('0029VbDEkTw9hXF0CaO0960F')) {
         replyText += channelAlertInfo;
       }
 
@@ -162,7 +166,10 @@ export const commands = {
 
     } catch (err) {
       console.error("AI Fallback Processing Error:", err);
-      await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/200747358617611` });
+      // Fixed the error string fallback message to instantly reflect your true channel
+      await sock.sendMessage(targetJid, { 
+        text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F` 
+      });
     }
   }
 };
