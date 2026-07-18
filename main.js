@@ -7,6 +7,7 @@ import http from 'http';
 import { CONFIG } from './config.js'; 
 import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
+import { getConfig } from './sql/database.js'; // Added to support privacy checking
 
 // ==========================================
 // 1. RENDER PORT HEALTH CHECK HTTP ENGINE
@@ -58,11 +59,10 @@ async function startBot() {
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
-      if (!activeAdmin) return; // Aborts automatically if out of shift hours
+      if (!activeAdmin) return; 
       const targetGroupIds = getAuthorizedPosterGroups();
       if (targetGroupIds.length === 0) return;
 
-      // Compiles dynamic text configuration template live from the plugin file
       const lobbyMessage = buildLobbyMessage();
       for (const groupId of targetGroupIds) {
         try {
@@ -90,7 +90,7 @@ async function startBot() {
         if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
         const ownerJid = `${rawOwner}@s.whatsapp.net`;
         try {
-          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n───────────────────────────\n\n⚡ *System Check:* ONLINE\n🖥️ *Host State:* Running on Render\n📦 *Modules:* Restored & Ready\n\n🏴‍☠️ _Captain, I am alive and fully operational! All automation intervals synced._`;
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
           await sock.sendMessage(ownerJid, { text: aliveAlert });
         } catch (err) {}
       }
@@ -124,58 +124,72 @@ async function startBot() {
       const commandName = args.shift().toLowerCase();
       let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
 
+      // Handle dot owner command manually if not in plugins
+      if (commandName === 'owner') {
+        const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+        await sock.sendMessage(msg.key.remoteJid, { 
+          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
+        });
+        return;
+      }
+
       if (commands[targetCmd]) {
+        // Privacy Check Engine
+        let isGroupPrivate = false;
+        if (isGroup) {
+          try {
+            const dbConfig = getConfig(msg.key.remoteJid);
+            if (dbConfig && dbConfig.group_privacy === 'private') {
+              isGroupPrivate = true;
+            }
+          } catch (e) {}
+        }
+
         if (isOwnerOrAdmin) {
           try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
         } else {
+          if (isGroupPrivate) return; // Silent drop in locked private groups
           await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
         }
-        return; // Prevents command execution from falling into AI methods
+        return; 
       }
     }
 
     if (isGroup) return;
 
-    // 🛡️ Pipeline 2: Gatekeeper Validation Check
-    let userIsInMainGroup = false;
-    if (!isOwnerOrAdmin) {
-      const targetCheckHub = CONFIG.MAIN_GROUP_JID || "None";
-      if (targetCheckHub && targetCheckHub !== "None") {
-        try {
-          const metadata = await sock.groupMetadata(targetCheckHub);
-          userIsInMainGroup = metadata.participants.some(p => p.id.split('@')[0].split(':')[0] === cleanSenderNum);
-        } catch (e) {
-          userIsInMainGroup = false;
-        }
-      } else {
-        userIsInMainGroup = true; 
-      }
-    } else {
-      userIsInMainGroup = true; 
-    }
-
-    if (!userIsInMainGroup) {
-      const customJoinAlert = `❌ *ACCESS DENIED* ❌\n───────────────────────────\n\nSorry, you are not a member of *Pirates Scrims* yet!\n\nTo interact with the bot engine, view guidelines, or reserve open slots, you must be part of our official main community hub.\n\n🔗 *Click here to join Pirates Scrims:* \n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
-      await sock.sendMessage(msg.key.remoteJid, { text: customJoinAlert });
-      return; // Halts text processing immediately for non-members
-    }
-
-    // 🔓 Pipeline 3: Casual Direct Message Interaction Conversational Route
+    // 🔓 [REMOVED DETECT ACCESS BLOCKS] All community members pass through freely here.
+    
     const lowerText = text.toLowerCase().trim();
     
+    // 👋 Instant Greeting Pipeline
+    if (lowerText === 'hi' || lowerText === 'hello' || lowerText === 'hey') {
+      await sock.sendMessage(msg.key.remoteJid, { 
+        text: `👋 Hello! Welcome to the helpline center for *Pirates Paid Scrims*.\n\nHow can I assist you with your registration, slots, or rules setup today? Feel free to ask me anything!` 
+      });
+      return;
+    }
+
     if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
       try { await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *PIRATES TOURNAMENT RULES*\n\n1. Play fair and cleanly.\n2. Payout processing takes 10 minutes max." }); } catch (e) {}
       return;
     }
 
+    // 🛠️ Fixed Help Route: Resolves correct shifts and handles target contacts smoothly
     if (lowerText === 'help' || lowerText.includes('problem') || lowerText.includes('issue')) {
-      const systemAdminNode = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0] || '917866052212';
-      await sock.sendMessage(msg.key.remoteJid, { text: `🛠️ *SUPPORT TICKET OPENED*\n\nYour alert has been received. Our active shift manager will contact you shortly!` });
-      await sock.sendMessage(`${systemAdminNode}@s.whatsapp.net`, { text: `🚨 *URGENT SUPPORT TICKET*\n📱 *User:* wa.me/${cleanSenderNum}\n📝 *Text:* "${text}"` });
+      const activeAdminNode = getActiveAdminForTime() || (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+      const formattedAdminNum = activeAdminNode.replace(/[^0-9]/g, '');
+      
+      await sock.sendMessage(msg.key.remoteJid, { 
+        text: `🛠️ *SUPPORT TICKET OPENED*\n───────────────────────────\n\nYour alert tracking has been received. Our active shift manager has been paged.\n\n📱 *Direct Chat Link:* wa.me/${formattedAdminNum}\nIf you need an instant response, click the link to text our online manager directly!` 
+      });
+      
+      await sock.sendMessage(`${formattedAdminNum}@s.whatsapp.net`, { 
+        text: `🚨 *URGENT SUPPORT TICKET*\n📱 *User:* wa.me/${cleanSenderNum}\n📝 *Message:* "${text}"` 
+      });
       return;
     }
 
-    // 🤖 AI Fallback Response Strategy
+    // 🤖 Pure AI Fallback Route (No messy shortcuts appended)
     await commands.handleAiFallback(sock, msg, text);
   });
 }
