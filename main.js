@@ -5,7 +5,6 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js'; 
-// ⚡ FIX: Moved privateUsers here to the top level import to resolve the SyntaxError crash
 import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage, privateUsers } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 import { getConfig } from './sql/database.js';
@@ -56,7 +55,7 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Maintained Safely)
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
@@ -120,47 +119,30 @@ async function startBot() {
     const isOwnerOrAdmin = verifyAuthority(sender);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-    // 🔒 PRIVACY BYPASS ENGINE (Now checks correctly via top level import mapping)
+    // 🔒 PRIVACY BYPASS ENGINE
     if (privateUsers.includes(cleanSenderNum)) return; 
 
-    // ⚡ Pipeline 1: Command Executions
+    // ⚡ Pipeline 1: Secure Admin Override Commands (Must use Prefix '.')
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
-      let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
+      const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public'];
 
-      if (commandName === 'owner') {
-        const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-        await sock.sendMessage(msg.key.remoteJid, { 
-          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
-        });
-        return;
-      }
-
-      if (commands[targetCmd]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public'];
-        
-        if (adminOnlyCmds.includes(targetCmd)) {
-          if (isOwnerOrAdmin) {
-            try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
-          } else {
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
-          }
+      if (adminOnlyCmds.includes(commandName)) {
+        if (isOwnerOrAdmin) {
+          try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
         } else {
-          // Public commands pass through directly for everyone!
-          try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
         }
         return; 
       }
     }
 
-    if (isGroup) return;
-
-    // 🤖 Pure AI Fallback Router
+    // 🧠 Pipeline 2: Intelligent NLP Command Parser & Gemini Fallback (No dots required!)
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
-      console.error("AI execution fallback channel error:", e);
+      console.error("AI execution processing channel error:", e);
     }
   });
 }
