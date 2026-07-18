@@ -1,9 +1,8 @@
 import { CONFIG } from '../config.js'; 
 import { GoogleGenAI } from '@google/genai';
 
-// FIXED: This forces the new SDK to read the environment key string directly
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
+// FIXED: Clean initialization allowing the official SDK to look for process.env.GEMINI_API_KEY natively
+const ai = new GoogleGenAI(); 
 
 const AUTHORIZED_ADMINS = [
   "917866052212", 
@@ -127,7 +126,7 @@ export const commands = {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
 
-    // Direct structural matching checks (Runs instantly without spending AI resource limits)
+    // Direct routing hooks to skip API cost calls on standard word targets
     if (lowerMessage === 'help' || lowerMessage === 'menu') return await commands.menu(sock, msg);
     if (lowerMessage === 'price' || lowerMessage === 'fee') return await commands.price(sock, msg);
     if (lowerMessage === 'slots') return await commands.slots(sock, msg);
@@ -136,12 +135,12 @@ export const commands = {
     if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
     if (lowerMessage === 'payout') return await commands.payout(sock, msg);
 
-    // FIXED: Your absolute correct new WhatsApp channel linkage update
+    // Corrected target channel string link
     const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F`;
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-flash-latest', // FIXED: Refactored target to the updated active global entry model
         contents: `You are LuffyTaro Bot, the dynamic pirate-themed automated support assistant for "Pirates Paid Scrims". 
         Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.).
         
@@ -166,7 +165,7 @@ export const commands = {
 
     } catch (err) {
       console.error("AI Fallback Processing Error:", err);
-      // Fixed the error string fallback message to instantly reflect your true channel
+      // Clean recovery text mapping your explicit channel string
       await sock.sendMessage(targetJid, { 
         text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F` 
       });
