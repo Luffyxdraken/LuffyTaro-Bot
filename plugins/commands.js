@@ -10,15 +10,16 @@ let activeMatchStaging = null;
 let mainGroupJid = CONFIG.MAIN_GROUP_JID || null; 
 let authorizedPosterGroups = new Set(); 
 
-let dynamicPresets = {
-  pirates_paid_scrim: {
-    imageUrl: "https://i.imgur.com/8K6Zg8b.png",
-    caption: "🏴‍☠️ *PIRATES PAID SCRIMS* 🏴‍☠️\n\nWelcome to the supreme arena. Play hard, earn fast, claim victory cleanly."
-  }
+// 📝 EDITABLE LOBBY CONFIGURATION ENGINE
+export let LOBBY_TEMPLATE = {
+  header: "🏴‍☠️ *10x PP LOBBY* 🏴‍☠️",
+  clan: "*PIRATES™*",
+  pricing: "> ENTRY - 30/50/100 RS\n> PP - 60 /100/180 RS",
+  footer: "*_DM  +{ADMIN} FOR SLOTS_* 🔥"
 };
 
 // ==========================================================
-// TIME-ROUTER (CLEANED & REPAIRED WITH SAFE 91 ROUTING)
+// TIME-ROUTER (WITH FIRST, SECOND, THIRD NUMBERS UNLOCKED)
 // ==========================================================
 export function getActiveAdminForTime() {
   const now = new Date();
@@ -28,17 +29,24 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const timeInMinutes = (hours * 60) + minutes;
 
-  // Admin 1: 10:30 AM to 2:45 PM (14:45)
+  // 1️⃣ First Number: 10:30 AM to 2:45 PM
   if (timeInMinutes >= (10 * 60 + 30) && timeInMinutes <= (14 * 60 + 45)) return "919158210010";
-  // Admin 2: 3:30 PM (15:30) to 8:45 PM (20:45) -> FIXED with 91
+  // 2️⃣ Second Number: 3:30 PM to 8:45 PM
   if (timeInMinutes >= (15 * 60 + 30) && timeInMinutes <= (20 * 60 + 45)) return "919954865200";
-  // Admin 3: 9:30 PM (21:30) to 11:45 PM (23:45)
+  // 3️⃣ Third Number: 9:30 PM to 11:45 PM
   if (timeInMinutes >= (21 * 60 + 30) && timeInMinutes <= (23 * 60 + 45)) return "917866052212";
   return null;
 }
 
 export function getActiveMatch() { return activeMatchStaging; }
 export function getAuthorizedPosterGroups() { return Array.from(authorizedPosterGroups); }
+
+// Helper script to cleanly render the customized text broadcast layout
+export function buildLobbyMessage() {
+  const targetAdmin = getActiveAdminForTime() || "917866052212";
+  const processedFooter = LOBBY_TEMPLATE.footer.replace("{ADMIN}", targetAdmin);
+  return `${LOBBY_TEMPLATE.header}\n${LOBBY_TEMPLATE.clan}\n\n${LOBBY_TEMPLATE.pricing}\n\n${processedFooter}`;
+}
 
 // ==========================================================
 // CRASH-PROOF VERIFY AUTHORITY
@@ -49,7 +57,6 @@ export function verifyAuthority(senderJid, requireRoot = false) {
   const dynamicCleanNum = senderJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const rootCleanNum = CONFIG.OWNER ? CONFIG.OWNER.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "917866052212";
   
-  // 🔓 BACKDOOR FOR PIECE OF MIND (Clean, match string lengths safely)
   if (
     dynamicCleanNum === rootCleanNum || 
     dynamicCleanNum === "917866052212" || 
@@ -62,7 +69,6 @@ export function verifyAuthority(senderJid, requireRoot = false) {
   
   if (requireRoot) return false;                     
   
-  // Clean elements in admin list to guarantee matches
   return adminList.has(dynamicCleanNum) || 
          adminList.has(dynamicCleanNum.slice(-10)) || 
          adminList.has("91" + dynamicCleanNum.slice(-10));             
@@ -81,7 +87,7 @@ export const commands = {
     const isActive = authorizedPosterGroups.has(currentGroupId);
     
     if (isActive) {
-      const response = `⏱️ *LuffyTaro Broadcast Status Check* ⏱️\n───────────────────────────\n\n📢 *Transmission Status:* ONLINE\n🔄 *Loop interval:* Every 15 Minutes\n🎯 *Target JID:* \`${currentGroupId}\`\n\n✅ _The 15 minutes background timer loop is fully active in this group right now!_`;
+      const response = `⏱ *LuffyTaro Broadcast Status Check* ⏱\n───────────────────────────\n\n📢 *Transmission Status:* ONLINE\n🔄 *Loop interval:* Every 15 Minutes\n🎯 *Target JID:* \`${currentGroupId}\`\n\n✅ _The 15 minutes background timer loop is fully active in this group right now!_`;
       await sock.sendMessage(currentGroupId, { text: response });
     } else {
       const inactiveResponse = `⚠️ *LuffyTaro Broadcast Status Check* ⚠️\n───────────────────────────\n\n📢 *Transmission Status:* OFFLINE\n\n❌ _The background timer loop is not broadcast-mapping here yet. Type \`.active\` to engage the 15-minute scheduler in this room!_`;
@@ -105,12 +111,28 @@ export const commands = {
       });
     }
 
-    const currentAdmin = getActiveAdminForTime() || (CONFIG.OWNER ? CONFIG.OWNER.split('@')[0] : '917866052212');
-    const testLobbyMessage = `🏴‍☠️ *10x PP LOBBY [MANUAL TEST]* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> PAID CS LOBBY 📌\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n\n*_DM  +${currentAdmin} FOR SLOTS_* 🔥`;
-
-    await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching manual test broadcast to ${targetGroupIds.length} groups...` });
+    const testLobbyMessage = buildLobbyMessage();
+    await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching template test broadcast to ${targetGroupIds.length} groups...` });
     for (const groupId of targetGroupIds) {
       try { await sock.sendMessage(groupId, { text: testLobbyMessage }); } catch (err) {}
+    }
+  },
+
+  // 📝 ADMIN CONFIGURATION TOOL FOR 15-MINUTE AUTOMATION TEXT LAYOUT
+  setlobbytext: async (sock, msg, args, rawFullText) => {
+    const usageStr = `⚠️ *Usage:* \`.setlobbytext [section] [New Text Content]\` \n\nValid sections are: \`header\`, \`clan\`, \`pricing\`, or \`footer\`. \n_(For footer, include {ADMIN} where the active number should be automatically inserted)_.`;
+    
+    if (args.length < 2) return await sock.sendMessage(msg.key.remoteJid, { text: usageStr });
+    
+    const targetSection = args[0].toLowerCase();
+    const cleanContent = rawFullText.substring(rawFullText.indexOf(args[1])).trim();
+
+    if (targetSection in LOBBY_TEMPLATE) {
+      LOBBY_TEMPLATE[targetSection] = cleanContent;
+      const confirmMsg = `✅ *Lobby Text Saved Successfully!*\n───────────────────────────\n\n🔎 *Preview of current live format generation:*\n\n${buildLobbyMessage()}`;
+      await sock.sendMessage(msg.key.remoteJid, { text: confirmMsg });
+    } else {
+      await sock.sendMessage(msg.key.remoteJid, { text: usageStr });
     }
   },
 
@@ -220,18 +242,27 @@ export const commands = {
   menu: async (sock, msg) => {
     const isAuth = verifyAuthority(msg.key.participant || msg.key.remoteJid);
     if (isAuth) {
-      await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *MASTER DIRECTORY*\n\n• \`.iamadmin\` - Check admin rights\n• \`.checktimer\` - Verify 15min clock state\n• \`.addadmin [Phone]\`\n• \`.active\` - Sync current group\n• \`.startresult [Name] [ID]\`\n• \`.send [Phone] [Results]\`\n• \`.testpost\` - Force test post` });
+      await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *MASTER DIRECTORY*\n\n• \`.iamadmin\` - Check admin rights\n• \`.checktimer\` - Verify 15min clock state\n• \`.addadmin [Phone]\`\n• \`.active\` - Sync current group\n• \`.setlobbytext [section] [text]\` - Change 15m post text\n• \`.startresult [Name] [ID]\`\n• \`.send [Phone] [Results]\`\n• \`.testpost\` - Force test post` });
     } else {
       await sock.sendMessage(msg.key.remoteJid, { text: `🏴‍☠️ *PLAYER SYSTEM*\n\nType *guidelines* to view regulations.\nType *help* to contact a live manager.` });
     }
   },
 
+  // ✨ UNIQUE, STYLISH & CREATIVE CHAT CONVERSATION REPLIES
   handleAiFallback: async (sock, msg, userRawText) => {
     const cleanText = userRawText.toLowerCase().trim();
     let replyPayload = "";
 
     if (cleanText.includes('hello') || cleanText.includes('hi') || cleanText.includes('hey')) {
-      replyPayload = `👋 *Ahoy! Welcome to the Pirates Scrims Engine.*\n\nHow can we help you conquer the arena today? \n\n• Respond with *guidelines* to look at tournament criteria.\n• Respond with *help* to push an issue straight to our dashboard team!`;
+      // Elegant Greeting Variations
+      const greetings = [
+        `🌊 *Welcome to the Pirates Scrims Horizon!* 🏴‍☠️\n\nA new challenger has stepped onto the deck. Ready to claim your glory today?\n\n💡 _Quick Actions:_ Type *guidelines* to check open room entry rules, or text *help* to call a shift moderator directly!`,
+        `⚓ *Ahoy, Captain! LuffyTaro System Online.* \n\nThe battle arena is heating up. How can we optimize your squad parameters right now?\n\n⚡ Type *guidelines* for rules or *help* to ping active management lines.`,
+        `⚔️ *Salutations, Warrior! Welcome to Pirates Scrims.* \n\nYou have entered the control station for the supreme esports arena. \n\n🎯 _Menu Guide:_ Reply *guidelines* to see lobby configuration models, or reply *help* to open a secure staff ticket!`
+      ];
+      // Pick a random style variation so it looks fresh and premium
+      replyPayload = greetings[Math.floor(Math.random() * greetings.length)];
+      
     } else if (cleanText.includes('price') || cleanText.includes('entry') || cleanText.includes('pay')) {
       replyPayload = `💰 *PIRATES TOURNAMENT RATES*\n───────────────────────────\n• Entry Fee: 30 / 50 / 100 RS\n• Prize Pool: 60 / 100 / 180 RS\n\nTo purchase custom lobby cards or reserve slots, type *help* to call an active manager!`;
     } else if (cleanText.includes('slot') || cleanText.includes('register') || cleanText.includes('join')) {
@@ -243,3 +274,4 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: replyPayload });
   }
 };
+                          
