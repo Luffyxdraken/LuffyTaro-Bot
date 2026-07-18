@@ -8,6 +8,7 @@ const AUTHORIZED_ADMINS = [
   "917866052212", 
   "919158210010", 
   "919954865200"
+    "200747358617611" 
 ];
 
 export let privateUsers = []; 
