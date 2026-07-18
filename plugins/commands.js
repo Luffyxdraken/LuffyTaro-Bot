@@ -2,13 +2,13 @@ import { CONFIG } from '../config.js';
 import { updateConfig } from '../sql/database.js'; 
 
 // ==========================================
-// 👥 MULTI-ADMIN SECURITY ENGINE (HYBRID FIX)
+// 👥 MULTI-ADMIN SECURITY ENGINE (HYBRID INTEGRATION)
 // ==========================================
 const AUTHORIZED_ADMINS = [
   "917866052212", 
   "919158210010", 
   "919954865200",
-  "200747358617611" // 🌟 Your unique Business Channel ID added here directly!
+  "200747358617611" // 🌟 Business Channel ID authorized explicitly here
 ];
 
 export let privateUsers = []; 
@@ -21,10 +21,10 @@ export function getAuthorizedPosterGroups() { return authorizedGroups; }
 export function verifyAuthority(sender) { 
   if (!sender) return false;
   
-  // Clean out device tags and pull the pure ID string
+  // Clean out device metadata blocks entirely
   const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   
-  // Match check handles standard numbers AND your distinct channel sequence smoothly
+  // Confirms if the cleaned string contains or is contained within the authority layout
   return AUTHORIZED_ADMINS.some(adminNum => cleanNum.includes(adminNum) || adminNum.includes(cleanNum));
 }
 
