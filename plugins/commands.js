@@ -1,14 +1,15 @@
 import { CONFIG } from '../config.js'; 
 import { updateConfig } from '../sql/database.js'; 
+import { GoogleGenAI } from '@google/genai'; // Assumes installation of standard Google Gen AI package
 
-// ==========================================
-// 👥 MULTI-ADMIN SECURITY ENGINE (HYBRID INTEGRATION)
-// ==========================================
+// Initialize Gemini Core Engine
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || CONFIG.GEMINI_KEY || "YOUR_KEY" });
+
 const AUTHORIZED_ADMINS = [
   "917866052212", 
   "919158210010", 
   "919954865200",
-  "200747358617611" // 🌟 Business Channel ID authorized explicitly here
+  "200747358617611" 
 ];
 
 export let privateUsers = []; 
@@ -20,137 +21,128 @@ export function getAuthorizedPosterGroups() { return authorizedGroups; }
 
 export function verifyAuthority(sender) { 
   if (!sender) return false;
-  
-  // Clean out device metadata blocks entirely
   const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  
-  // Confirms if the cleaned string contains or is contained within the authority layout
   return AUTHORIZED_ADMINS.some(adminNum => cleanNum.includes(adminNum) || adminNum.includes(cleanNum));
 }
 
 export function buildLobbyMessage() {
-  return `🏴‍☠️ *PIRATES LOBBY BROADCAST*\n───────────────────────────\nSlots filling fast! Drop your lineups now!`;
+  return `🏴‍☠️ *PIRATES LOBBY BROADCAST*\n───────────────────────────\nSlots filling fast! Drop your lineups now to secure your entry spot!`;
 }
 
-// ==========================================
-// 🛠️ THE COMMAND REGISTRY INDEX
-// ==========================================
 export const commands = {
-  // --- 🌍 PUBLIC COMMANDS (Open to everyone) ---
-  menu: async (sock, msg, args) => {
-    const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n` +
-      `• \`.menu\` / \`.help\` - Show this master command layout.\n` +
-      `• \`.guidelines\` / \`.rules\` - Display match rules and guidelines.\n` +
-      `• \`.slots\` - Query open matches and available slot layouts.\n` +
-      `• \`.tournament\` - Details regarding ongoing official tournaments.\n` +
-      `• \`.price\` - List entry fees and pricing sheets for paid scrims.\n` +
-      `• \`.schedule\` - View daily and weekly match timings.\n` +
-      `• \`.payout\` - Information on prize distribution and timelines.\n` +
-      `• \`.send [number] [msg]\` - Send direct messages across inboxes.`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
-  help: async (sock, msg, args) => { commands.menu(sock, msg, args); },
+  // --- 🌍 INFO TEXT DATA OUTPUTS ---
+  menu: `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n• \`menu\` / \`help\` - Show this master command layout.\n• \`guidelines\` / \`rules\` - Display match rules and guidelines.\n• \`slots\` - Query open matches and available slot layouts.\n• \`tournament\` - Details regarding ongoing official tournaments.\n• \`price\` - List entry fees and pricing sheets for paid scrims.\n• \`schedule\` - View daily and weekly match timings.\n• \`payout\` - Information on prize distribution and timelines.\n• \`owner\` - Display developer connection cards.`,
 
-  guidelines: async (sock, msg, args) => {
-    const text = `🏴‍☠️ *PIRATES TOURNAMENT RULES*\n───────────────────────────\n1. Strictly no emulator allowed unless noted.\n2. Hacks, scripts, or teaming up results in an instant permanent ban.\n3. Payout processing takes roughly 10-15 minutes post-match review.`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
-  rules: async (sock, msg, args) => { commands.guidelines(sock, msg, args); },
+  guidelines: `🏴‍☠️ *PIRATES TOURNAMENT RULES*\n───────────────────────────\n1. Strictly no emulator allowed unless explicitly noted.\n2. Hacks, scripts, or teaming up results in an instant permanent ban.\n3. Payout processing takes roughly 10-15 minutes post-match review.`,
 
-  slots: async (sock, msg, args) => {
-    const text = `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• Match 1 (06:00 PM): 14/25 Slots Filled\n• Match 2 (08:00 PM): 19/25 Slots Filled\n• Match 3 (10:00 PM): 05/25 Slots Filled\n\n💬 Send your team lineup to secure a position now!`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
+  slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• Match 1 (06:00 PM): 14/25 Slots Filled\n• Match 2 (08:00 PM): 19/25 Slots Filled\n• Match 3 (10:00 PM): 05/25 Slots Filled\n\n💬 Send your team lineup here to secure a position now!`,
 
-  tournament: async (sock, msg, args) => {
-    const text = `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: ₹10,000 RS\n• Total Teams: 48 Lineups Max\n• Registration: Closing soon.\n\nType \`.price\` to check structural entrance points.`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
+  tournament: `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: ₹10,000 RS\n• Total Teams: 48 Lineups Max\n• Registration: Closing soon.\n\nAsk for 'price' to check structural entrance fees.`,
 
-  price: async (sock, msg, args) => {
-    const text = `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single Match Entry: ₹30 RS per lineup\n• Daily Pass (3 Matches): ₹80 RS\n• Weekly Season Pass: ₹500 RS\n\nDM host or type \`.payout\` to understand transaction structures.`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
+  price: `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single Match Entry: ₹30 RS per lineup\n• Daily Pass (3 Matches): ₹80 RS\n• Weekly Season Pass: ₹500 RS\n\nDrop your lineup to get started right away.`,
 
-  schedule: async (sock, msg, args) => {
-    const text = `⏰ *DAILY MATCH TIMETABLE*\n───────────────────────────\n• 🎮 Map 1 (Bermuda): 06:00 PM IST\n• 🎮 Map 2 (Purgatory): 08:00 PM IST\n• 🎮 Map 3 (Kalahari): 10:00 PM IST\n\nRoom details are sent out exactly 15 minutes before launch time.`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
+  schedule: `⏰ *DAILY MATCH TIMETABLE*\n───────────────────────────\n• 🎮 Map 1 (Bermuda): 06:00 PM IST\n• 🎮 Map 2 (Purgatory): 08:00 PM IST\n• 🎮 Map 3 (Kalahari): 10:00 PM IST\n\nRoom details are sent out exactly 15 minutes before launch time.`,
 
-  payout: async (sock, msg, args) => {
-    const text = `💸 *PRIZE DISTRIBUTION SYSTEM*\n───────────────────────────\n• Winner Take All structures clear inside 15 minutes.\n• Payments processed through UPI, GPay, and PhonePe.\n• Screenshots of placements must be dropped in the main group right as you finish.`;
-    await sock.sendMessage(msg.key.remoteJid, { text });
-  },
+  payout: `💸 *PRIZE DISTRIBUTION SYSTEM*\n───────────────────────────\n• Winner Take All structures clear inside 15 minutes.\n• Payments processed through UPI, GPay, and PhonePe.\n• Screenshots of placements must be dropped in the main group right as you finish.`,
 
-  send: async (sock, msg, args) => {
-    const chatId = msg.key.remoteJid;
-    if (args.length < 2) {
-      return await sock.sendMessage(chatId, { text: `💡 *Usage:* \`.send [phone_number] [message]\`\nExample: \`.send 917866052212 Hello!\`` });
-    }
-    let rawNum = args.shift().replace(/[^0-9]/g, '');
-    const msgText = args.join(' ');
-    if (!rawNum.startsWith('91') && rawNum.length === 10) rawNum = '91' + rawNum;
-    
-    try {
-      await sock.sendMessage(`${rawNum}@s.whatsapp.net`, { text: msgText });
-      await sock.sendMessage(chatId, { text: `🚀 Message successfully delivered straight to *wa.me/${rawNum}*!` });
-    } catch (e) {
-      await sock.sendMessage(chatId, { text: `❌ Delivery failed.` });
-    }
-  },
-
-  // --- 🛡️ ADMIN ONLY COMMANDS ---
+  // --- 🛡️ SECURE INFRASTRUCTURE COMMANDS (Prefix Managed) ---
   authorize: async (sock, msg, args) => {
-    if (!verifyAuthority(msg.key.participant || msg.key.remoteJid)) return;
     const id = args[0] || msg.key.remoteJid;
     if (!authorizedGroups.includes(id)) authorizedGroups.push(id);
     await sock.sendMessage(msg.key.remoteJid, { text: `✅ Group authorized successfully.` });
   },
   
   unauthorize: async (sock, msg, args) => {
-    if (!verifyAuthority(msg.key.participant || msg.key.remoteJid)) return;
     const id = args[0] || msg.key.remoteJid;
     authorizedGroups = authorizedGroups.filter(g => g !== id);
     await sock.sendMessage(msg.key.remoteJid, { text: `❌ Group authorization removed.` });
   },
 
   private: async (sock, msg, args) => {
-    if (!verifyAuthority(msg.key.participant || msg.key.remoteJid)) return;
     let targetNum = args[0] ? args[0].replace(/[^0-9]/g, '') : msg.key.remoteJid.split('@')[0];
-    
     if (!targetNum) return;
     if (!targetNum.startsWith('91') && targetNum.length === 10) targetNum = '91' + targetNum;
-    
-    if (!privateUsers.includes(targetNum)) {
-      privateUsers.push(targetNum);
-    }
-    await sock.sendMessage(msg.key.remoteJid, { text: `🔒 User *wa.me/${targetNum}* is now set to *PRIVATE*. The bot will ignore their direct messages.` });
+    if (!privateUsers.includes(targetNum)) privateUsers.push(targetNum);
+    await sock.sendMessage(msg.key.remoteJid, { text: `🔒 User *wa.me/${targetNum}* is now set to PRIVATE.` });
   },
 
   public: async (sock, msg, args) => {
-    if (!verifyAuthority(msg.key.participant || msg.key.remoteJid)) return;
     let targetNum = args[0] ? args[0].replace(/[^0-9]/g, '') : msg.key.remoteJid.split('@')[0];
-    
     if (!targetNum) return;
     if (!targetNum.startsWith('91') && targetNum.length === 10) targetNum = '91' + targetNum;
-    
     privateUsers = privateUsers.filter(u => u !== targetNum);
-    await sock.sendMessage(msg.key.remoteJid, { text: `🔓 User *wa.me/${targetNum}* is now set to *PUBLIC*. The bot will respond to them normally.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `🔓 User *wa.me/${targetNum}* is now set to PUBLIC.` });
   },
 
   // ==========================================
-  // 🤖 THE STRICT AI FALLBACK ROUTER
+  // 🤖 THE INTELLIGENT GEMINI AI PIPELINE
   // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
+    const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
 
-    if (lowerMessage.includes('who are you') || lowerMessage.includes('your name') || lowerMessage.includes('what are you')) {
-      const identityText = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI am the dedicated system bot for *Pirates Paid Scrims*. I manage entry configurations, schedule notifications, and slot lineups automatically inside our matches. \n\nHow can I help you dominate the battlefield today?`;
-      return await sock.sendMessage(targetJid, { text: identityText });
+    // 1. Direct Keywords mapping fallback (Fast track without hitting AI tokens)
+    if (lowerMessage === 'help' || lowerMessage === 'menu') return await sock.sendMessage(targetJid, { text: commands.menu });
+    if (lowerMessage === 'price') return await sock.sendMessage(targetJid, { text: commands.price });
+    if (lowerMessage === 'slots') return await sock.sendMessage(targetJid, { text: commands.slots });
+    if (lowerMessage === 'rules' || lowerMessage === 'guidelines') return await sock.sendMessage(targetJid, { text: commands.guidelines });
+    if (lowerMessage === 'schedule') return await sock.sendMessage(targetJid, { text: commands.schedule });
+    if (lowerMessage === 'tournament') return await sock.sendMessage(targetJid, { text: commands.tournament });
+    if (lowerMessage === 'payout') return await sock.sendMessage(targetJid, { text: commands.payout });
+    if (lowerMessage === 'owner') {
+      return await sock.sendMessage(targetJid, { text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\nManaged by: wa.me/${ownerNum}` });
     }
 
-    const responseText = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! I'm here to handle entries, schedules, and slots for **Pirates Paid Scrims**. \n\nIf you have a quick question about our registration blocks or entry costs, type out the \`.menu\` command to see all active links instantly!`;
-    await sock.sendMessage(targetJid, { text: responseText });
+    // 2. High Intelligence Gemini Engine Routing
+    try {
+      const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/200747358617611`;
+      
+      const aiPrompt = `
+        You are LuffyTaro Bot, the smart AI assistant for "Pirates Paid Scrims". 
+        Your job is to answer the user contextually in any language or slang they use (Hindi, English, Hinglish, etc.).
+        
+        Here is the tournament data data sheet you know:
+        - Menu/Help: ${commands.menu}
+        - Guidelines/Rules: ${commands.guidelines}
+        - Slots info: ${commands.slots}
+        - Tournament: ${commands.tournament}
+        - Prices: ${commands.price}
+        - Match Schedule: ${commands.schedule}
+        - Payout Methods: ${commands.payout}
+
+        If the user is saying hello, hi, greeting you, asking a question, or misspelling words (e.g. "prc", "schdule", "hlp"), classify what they want.
+        - If they want a specific detail (like prices, rules, slots), summarize it or print it perfectly in character.
+        - If they are greeting you or asking how to participate, answer warmly, explain things, and explicitly mention they should join the official channel.
+        
+        Keep your tone pirate-themed, confident, and direct. User message: "${userMessage}"
+      `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: aiPrompt,
+      });
+
+      let replyText = response.text || "🏴‍☠️ Captain, my connection wavered. Try asking that again or type 'menu'!";
+      
+      // Force append channel reference explicitly if a greeting or participation inquiry occurs
+      const greetingGaps = ['hi', 'hello', 'hey', 'join', 'parti', 'start', 'bro', 'sir', 'setup'];
+      if (greetingGaps.some(word => lowerMessage.includes(word))) {
+        if (!replyText.includes('200747358617611')) {
+          replyText += channelAlertInfo;
+        }
+      }
+
+      await sock.sendMessage(targetJid, { text: replyText });
+
+    } catch (err) {
+      console.error("Gemini Failure, using structured word match backup:", err);
+      // Absolute failsafe structural keyword checker
+      if (lowerMessage.includes('pric') || lowerMessage.includes('fees') || lowerMessage.includes('paisa')) {
+        await sock.sendMessage(targetJid, { text: commands.price });
+      } else {
+        await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey! Drop your question or query here. You can type *menu* anytime to view pricing, timelines, slots, and schedules directly without using dots!` });
+      }
+    }
   }
 };
