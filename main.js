@@ -7,7 +7,7 @@ import http from 'http';
 import { CONFIG } from './config.js'; 
 import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
-import { getConfig } from './sql/database.js'; // Added to support privacy checking
+import { getConfig } from './sql/database.js';
 
 // ==========================================
 // 1. RENDER PORT HEALTH CHECK HTTP ENGINE
@@ -55,7 +55,7 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Kept Intact!)
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
@@ -115,8 +115,13 @@ async function startBot() {
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
 
     if (!text) return;
+    
     const isOwnerOrAdmin = verifyAuthority(sender);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+    // 🔒 PRIVACY BYPASS ENGINE
+    import { privateUsers } from './plugins/commands.js';
+    if (privateUsers.includes(cleanSenderNum)) return; 
 
     // ⚡ Pipeline 1: Command Executions
     if (text.startsWith(CONFIG.PREFIX)) {
@@ -124,7 +129,6 @@ async function startBot() {
       const commandName = args.shift().toLowerCase();
       let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
 
-      // Handle dot owner command manually if not in plugins
       if (commandName === 'owner') {
         const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
         await sock.sendMessage(msg.key.remoteJid, { 
@@ -134,22 +138,17 @@ async function startBot() {
       }
 
       if (commands[targetCmd]) {
-        // Privacy Check Engine
-        let isGroupPrivate = false;
-        if (isGroup) {
-          try {
-            const dbConfig = getConfig(msg.key.remoteJid);
-            if (dbConfig && dbConfig.group_privacy === 'private') {
-              isGroupPrivate = true;
-            }
-          } catch (e) {}
-        }
-
-        if (isOwnerOrAdmin) {
-          try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public'];
+        
+        if (adminOnlyCmds.includes(targetCmd)) {
+          if (isOwnerOrAdmin) {
+            try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+          } else {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+          }
         } else {
-          if (isGroupPrivate) return; // Silent drop in locked private groups
-          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+          // Public commands pass through directly for everyone!
+          try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
         }
         return; 
       }
@@ -157,40 +156,12 @@ async function startBot() {
 
     if (isGroup) return;
 
-    // 🔓 [REMOVED DETECT ACCESS BLOCKS] All community members pass through freely here.
-    
-    const lowerText = text.toLowerCase().trim();
-    
-    // 👋 Instant Greeting Pipeline
-    if (lowerText === 'hi' || lowerText === 'hello' || lowerText === 'hey') {
-      await sock.sendMessage(msg.key.remoteJid, { 
-        text: `👋 Hello! Welcome to the helpline center for *Pirates Paid Scrims*.\n\nHow can I assist you with your registration, slots, or rules setup today? Feel free to ask me anything!` 
-      });
-      return;
+    // 🤖 Pure AI Fallback Router
+    try {
+      await commands.handleAiFallback(sock, msg, text);
+    } catch (e) {
+      console.error("AI execution fallback channel error:", e);
     }
-
-    if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
-      try { await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *PIRATES TOURNAMENT RULES*\n\n1. Play fair and cleanly.\n2. Payout processing takes 10 minutes max." }); } catch (e) {}
-      return;
-    }
-
-    // 🛠️ Fixed Help Route: Resolves correct shifts and handles target contacts smoothly
-    if (lowerText === 'help' || lowerText.includes('problem') || lowerText.includes('issue')) {
-      const activeAdminNode = getActiveAdminForTime() || (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-      const formattedAdminNum = activeAdminNode.replace(/[^0-9]/g, '');
-      
-      await sock.sendMessage(msg.key.remoteJid, { 
-        text: `🛠️ *SUPPORT TICKET OPENED*\n───────────────────────────\n\nYour alert tracking has been received. Our active shift manager has been paged.\n\n📱 *Direct Chat Link:* wa.me/${formattedAdminNum}\nIf you need an instant response, click the link to text our online manager directly!` 
-      });
-      
-      await sock.sendMessage(`${formattedAdminNum}@s.whatsapp.net`, { 
-        text: `🚨 *URGENT SUPPORT TICKET*\n📱 *User:* wa.me/${cleanSenderNum}\n📝 *Message:* "${text}"` 
-      });
-      return;
-    }
-
-    // 🤖 Pure AI Fallback Route (No messy shortcuts appended)
-    await commands.handleAiFallback(sock, msg, text);
   });
 }
 
