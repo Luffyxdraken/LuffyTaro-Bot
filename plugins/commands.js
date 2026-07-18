@@ -1,9 +1,9 @@
 import { CONFIG } from '../config.js'; 
-import { updateConfig } from '../sql/database.js'; 
 import { GoogleGenAI } from '@google/genai';
 
-// Corrected SDK client initialization format
-const ai = new GoogleGenAI(); 
+// FIXED: Initialize the SDK with an empty configuration object to bypass the project check
+// It will automatically pick up process.env.GEMINI_API_KEY safely!
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY }); 
 
 const AUTHORIZED_ADMINS = [
   "917866052212", 
@@ -15,7 +15,7 @@ const AUTHORIZED_ADMINS = [
 export let privateUsers = []; 
 let activeAdmin = "917866052212"; 
 let authorizedGroups = [];
-let loopRunningStatus = true; // Tracks whether the loop engine is active
+let loopRunningStatus = true; 
 
 export function getActiveAdminForTime() { return activeAdmin; }
 export function getAuthorizedPosterGroups() { return authorizedGroups; }
@@ -71,7 +71,7 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
 
-  // --- 👑 RESTORED ADMIN ONLY COMMAND ENGINE BLOCK ---
+  // --- 👑 ADMIN REGISTRY ENGINE ---
   iamadmin: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
@@ -121,15 +121,10 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `🔓 User *wa.me/${targetNum}* is now set to PUBLIC.` });
   },
 
-  // ==========================================
-  // 🤖 STABILIZED DYNAMIC AI HANDLING CHANNEL
-  // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
-    const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
 
-    // Direct Text Router (No dots needed for public info)
     if (lowerMessage === 'help' || lowerMessage === 'menu') return await commands.menu(sock, msg);
     if (lowerMessage === 'price' || lowerMessage === 'fee') return await commands.price(sock, msg);
     if (lowerMessage === 'slots') return await commands.slots(sock, msg);
@@ -138,7 +133,6 @@ export const commands = {
     if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
     if (lowerMessage === 'payout') return await commands.payout(sock, msg);
 
-    // Call Gemini with proper authorization layout configuration
     try {
       const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/200747358617611`;
       
@@ -159,7 +153,6 @@ export const commands = {
       let replyText = response.text || "";
       if (!replyText) throw new Error("Empty AI response buffer");
 
-      // Add branding link on introductory greetings or onboarding messages
       const introWords = ['hi', 'hello', 'hey', 'join', 'participate', 'start', 'how'];
       if (introWords.some(word => lowerMessage.includes(word)) && !replyText.includes('200747358617611')) {
         replyText += channelAlertInfo;
@@ -168,15 +161,8 @@ export const commands = {
       await sock.sendMessage(targetJid, { text: replyText });
 
     } catch (err) {
-      console.error("Gemini processing fault, dropping to direct keyword checks:", err);
-      // Clean fallback if environment tokens aren't active or setup breaks
-      if (lowerMessage.includes('price') || lowerMessage.includes('fee')) {
-        await commands.price(sock, msg);
-      } else if (lowerMessage.includes('slot')) {
-        await commands.slots(sock, msg);
-      } else {
-        await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/200747358617611` });
-      }
+      console.error("AI Fallback Processing Error:", err);
+      await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/200747358617611` });
     }
   }
 };
