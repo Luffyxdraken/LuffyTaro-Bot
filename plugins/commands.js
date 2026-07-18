@@ -1,9 +1,9 @@
 import { CONFIG } from '../config.js'; 
 import { GoogleGenAI } from '@google/genai';
 
-// FIXED: Correct initialization syntax for the official new @google/genai SDK.
-// It will automatically pick up the process.env.GEMINI_API_KEY from your Render dashboard settings.
-const ai = new GoogleGenAI(); 
+// FIXED: This forces the new SDK to read the environment key string directly
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 
 const AUTHORIZED_ADMINS = [
   "917866052212", 
