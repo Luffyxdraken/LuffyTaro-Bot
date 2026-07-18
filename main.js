@@ -5,7 +5,8 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js'; 
-import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage } from './plugins/commands.js';
+// ⚡ FIX: Moved privateUsers here to the top level import to resolve the SyntaxError crash
+import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage, privateUsers } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 import { getConfig } from './sql/database.js';
 
@@ -55,7 +56,7 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Kept Intact!)
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Maintained Safely)
   setInterval(async () => {
     try {
       const activeAdmin = getActiveAdminForTime();
@@ -119,8 +120,7 @@ async function startBot() {
     const isOwnerOrAdmin = verifyAuthority(sender);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-    // 🔒 PRIVACY BYPASS ENGINE
-    import { privateUsers } from './plugins/commands.js';
+    // 🔒 PRIVACY BYPASS ENGINE (Now checks correctly via top level import mapping)
     if (privateUsers.includes(cleanSenderNum)) return; 
 
     // ⚡ Pipeline 1: Command Executions
