@@ -106,7 +106,7 @@ export const commands = {
     }
 
     const currentAdmin = getActiveAdminForTime() || (CONFIG.OWNER ? CONFIG.OWNER.split('@')[0] : '917866052212');
-    const testLobbyMessage = `🏴‍☠️ *10x PP LOBBY [MANUAL TEST]* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> 6 PM PAID CS LOBBY 📌\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n\n*_DM  +${currentAdmin} FOR SLOTS_* 🔥`;
+    const testLobbyMessage = `🏴‍☠️ *10x PP LOBBY [MANUAL TEST]* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> PAID CS LOBBY 📌\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n\n*_DM  +${currentAdmin} FOR SLOTS_* 🔥`;
 
     await sock.sendMessage(msg.key.remoteJid, { text: `🚀 Dispatching manual test broadcast to ${targetGroupIds.length} groups...` });
     for (const groupId of targetGroupIds) {
