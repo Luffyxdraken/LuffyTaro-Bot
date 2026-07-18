@@ -11,5 +11,5 @@ export const CONFIG = {
 
   // 🔗 CODES & STRINGS (Saved perfectly so people can still join)
   MAIN_GROUP_JID: '120363198374920134@g.us', 
-  MAIN_GROUP_INVITE_LINK: 'https://chat.whatsapp.com/FzIxR7J8W1W8BB0z90ectp'
+  MAIN_GROUP_INVITE_LINK: 'https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F'
 };
