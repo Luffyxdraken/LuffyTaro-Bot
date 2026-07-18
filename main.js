@@ -5,7 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js'; 
-import { commands, getActiveAdminForTime, getActiveMatch, getAuthorizedPosterGroups, verifyAuthority } from './plugins/commands.js';
+import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, isLoopPaused } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
 const PORT = process.env.PORT || 3000;
@@ -45,8 +45,10 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Broadcast Loop
+  // 🕒 Automated 15-Minute Broadcast Loop (With Pause Check)
   setInterval(async () => {
+    if (isLoopPaused()) return; // Abort if admin disabled the timer via command
+
     try {
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return;
@@ -72,21 +74,16 @@ async function startBot() {
       if (statusCode !== DisconnectReason.loggedOut) setTimeout(() => startBot(), 5000);
     }
     
-    // 🔔 DISPATCH "I AM ALIVE" STATUS NOTIFICATION TO OWNER
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
-      
-      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-      if (!rawOwner.startsWith('91') && rawOwner.length === 10) {
-        rawOwner = '91' + rawOwner;
-      }
-      const ownerJid = `${rawOwner}@s.whatsapp.net`;
-
-      try {
-        const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n───────────────────────────\n\n⚡ *System Check:* ONLINE\n🖥️ *Host State:* Running on Render\n📦 *Modules:* Restored & Ready\n\n🏴‍☠️ _Captain, I am alive and fully operational! The 15-minute lobby loops are armed._`;
-        await sock.sendMessage(ownerJid, { text: aliveAlert });
-      } catch (err) {
-        console.error('⚠️ Failed to deliver operational status message to owner:', err.message);
+      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
+      if (rawOwner) {
+        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
+        const ownerJid = `${rawOwner}@s.whatsapp.net`;
+        try {
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n───────────────────────────\n\n⚡ *System Check:* ONLINE\n🖥️ *Host State:* Running on Render\n📦 *Modules:* Restored & Ready\n\n🏴‍☠️ _Captain, I am alive and fully operational!_`;
+          await sock.sendMessage(ownerJid, { text: aliveAlert });
+        } catch (err) {}
       }
     }
   });
@@ -107,6 +104,7 @@ async function startBot() {
 
     if (!text) return;
     const isOwnerOrAdmin = verifyAuthority(sender);
+    const cleanSenderNum = sender.split('@')[0].split(':')[0];
 
     // ⚡ 1. COMMAND PROCESSING PIPELINE
     if (text.startsWith(CONFIG.PREFIX)) {
@@ -117,31 +115,24 @@ async function startBot() {
       if (commands[targetCmd]) {
         if (isOwnerOrAdmin) {
           try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
-          return;
         } else {
-          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${sender.split('@')[0]}\`) does not hold admin clearance tags.` });
-          return;
+          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
         }
+        return; // 🛑 CRITICAL CRASH FIX: Stops execution completely. Never falls through to AI.
       }
     }
 
     if (isGroup) return;
 
-    // 🛡️ 2. STRICT GATEKEEPER COMMUNITY ACCESS VALIDATION
+    // 🛡️ 2. STRICT COMMUNITY ACCESS GATEKEEPER
     let userIsInMainGroup = false;
     
     if (!isOwnerOrAdmin) {
       const targetCheckHub = CONFIG.MAIN_GROUP_JID || "None";
-      
       if (targetCheckHub && targetCheckHub !== "None") {
         try {
           const metadata = await sock.groupMetadata(targetCheckHub);
-          const cleanSenderId = sender.split('@')[0].split(':')[0];
-          
-          userIsInMainGroup = metadata.participants.some(p => {
-            const cleanParticipantId = p.id.split('@')[0].split(':')[0];
-            return cleanParticipantId === cleanSenderId;
-          });
+          userIsInMainGroup = metadata.participants.some(p => p.id.split('@')[0].split(':')[0] === cleanSenderNum);
         } catch (e) {
           userIsInMainGroup = false;
         }
@@ -152,28 +143,28 @@ async function startBot() {
       userIsInMainGroup = true; 
     }
 
-    // 🚫 REJECTION ACTION FOR EXTERNAL PLAYERS
     if (!userIsInMainGroup) {
-      const customJoinAlert = `❌ *ACCESS DENIED* ❌\n───────────────────────────\n\nSorry, you are not a member of *Pirates Scrims* yet!\n\nTo interact with the bot engine, view guidelines, or reserve open slots, you must be part of our official main community hub.\n\n🔗 *Click here to join Pirates Scrims:* \n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}\n\n_Once you have joined the group, try messaging the bot again!_`;
+      const customJoinAlert = `❌ *ACCESS DENIED* ❌\n───────────────────────────\n\nSorry, you are not a member of *Pirates Scrims* yet!\n\nTo interact with the bot engine, view guidelines, or reserve open slots, you must be part of our official main community hub.\n\n🔗 *Click here to join Pirates Scrims:* \n👉 ${CONFIG.MAIN_GROUP_INVITE_LINK}`;
       await sock.sendMessage(msg.key.remoteJid, { text: customJoinAlert });
-      return;
+      return; // 🛑 CRITICAL CRASH FIX: Prevents non-members from triggering AI workflows.
     }
 
-    // 🔓 3. CONVERSATIONAL TEXT DISTRIBUTOR
+    // 🔓 3. CONVERSATIONAL TEXT ROUTER
     const lowerText = text.toLowerCase().trim();
     
     if (lowerText === 'guidelines' || lowerText === 'rules' || lowerText === 'info') {
-      try { await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *PIRATES TOURNAMENT RULES*\n\n1. Play fair and cleanly.\n2. Payout processing takes 10 minutes max.\n3. Report anomalies directly via the *help* utility." }); } catch (e) {}
+      try { await sock.sendMessage(msg.key.remoteJid, { text: "🏴‍☠️ *PIRATES TOURNAMENT RULES*\n\n1. Play fair and cleanly.\n2. Payout processing takes 10 minutes max." }); } catch (e) {}
       return;
     }
 
     if (lowerText === 'help' || lowerText.includes('problem') || lowerText.includes('issue')) {
       const systemAdminNode = getActiveAdminForTime() || CONFIG.OWNER.split('@')[0];
       await sock.sendMessage(msg.key.remoteJid, { text: `🛠️ *SUPPORT TICKET OPENED*\n\nYour alert has been received. Our active shift manager will contact you shortly!` });
-      await sock.sendMessage(`${systemAdminNode}@s.whatsapp.net`, { text: `🚨 *URGENT SUPPORT TICKET*\n📱 *User:* wa.me/${sender.split('@')[0].split(':')[0]}\n📝 *Text:* "${text}"` });
+      await sock.sendMessage(`${systemAdminNode}@s.whatsapp.net`, { text: `🚨 *URGENT SUPPORT TICKET*\n📱 *User:* wa.me/${cleanSenderNum}\n📝 *Text:* "${text}"` });
       return;
     }
 
+    // 🤖 4. AI WORKFLOW FALLBACK
     await commands.handleAiFallback(sock, msg, text);
   });
 }
@@ -183,3 +174,4 @@ async function run() {
   await startBot();
 }
 run();
+      
