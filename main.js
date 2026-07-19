@@ -15,7 +15,7 @@ import {
 } from './plugins/commands.js';
 
 // ==========================================
-// 1. HEALTH CHECK HTTP ENGINE (For Render deployment)
+// 1. HEALTH CHECK HTTP ENGINE (For Render Deploys)
 // ==========================================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
@@ -92,15 +92,14 @@ async function startBot() {
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      // 🚀 GUARANTEED OWNER ALIVE DISPATCHER
+      // 🚀 GUARANTEED OWNER ALIVE DISPATCHER (Sends strictly to personal DM)
       setTimeout(async () => {
         try {
-          // Pulls the direct JID string explicitly from your config file
           const targetOwnerJid = CONFIG.OWNER || `${CONFIG.OWNER_NUMBER}@s.whatsapp.net`;
           const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational! Ready to receive matchmaking traffic.`;
           
           await sock.sendMessage(targetOwnerJid, { text: aliveAlert });
-          console.log(`📬 Startup alert cleanly pushed to: ${targetOwnerJid}`);
+          console.log(`📬 Startup alert cleanly pushed to personal DM: ${targetOwnerJid}`);
         } catch (err) {
           console.error("Failed to send alive alert to owner inbox:", err.message);
         }
@@ -117,7 +116,7 @@ async function startBot() {
     const msg = messages[0];
     if (!msg.message) return;
 
-    // Ignore outgoing messages sent by the bot itself to prevent response loops
+    // Prevent response loops from outgoing bot interactions
     if (msg.key.fromMe) return;
 
     const remoteJid = msg.key.remoteJid;
@@ -131,7 +130,7 @@ async function startBot() {
 
     // ⚡ Pipeline 1: Command System (Starts with Prefix Symbol)
     if (text.startsWith(CONFIG.PREFIX)) {
-      // Security Filter: Command usage in Groups/Channels is restricted to Admins only
+      // Security Gate: Non-admins are completely blocked from executing dot commands in Groups/Channels
       if (isGroupOrChannel && !isOwnerOrAdmin) return;
 
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
@@ -154,8 +153,10 @@ async function startBot() {
       return; 
     }
 
-    // ⚡ Pipeline 2: Fully Public Conversational AI Engine
-    // Filters dropped entirely. Every inbound text from anyone hits the AI fallback processor.
+    // ⚡ Pipeline 2: Conversational AI Engine (STRICTLY FOR PRIVATE DMs ONLY)
+    // If the message came from a Group or a Channel, drop it instantly so AI stays out.
+    if (isGroupOrChannel) return;
+
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
