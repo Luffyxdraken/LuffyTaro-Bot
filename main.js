@@ -11,20 +11,18 @@ import {
   getAuthorizedPosterGroups, 
   verifyAuthority, 
   buildLobbyMessage, 
-  privateUsers,
   isLoopActive
 } from './plugins/commands.js';
-import { handleGroupParticipants } from './plugins/automation.js';
 
 // ==========================================
-// 1. RENDER PORT HEALTH CHECK HTTP ENGINE
+// 1. HEALTH CHECK HTTP ENGINE (Render Container Keep-Alive)
 // ==========================================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('LuffyTaro Bot System Online');
 }).listen(PORT, () => {
-  console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
+  console.log(`📡 Healthcheck mapping active on port ${PORT}`);
 });
 
 // ==========================================
@@ -44,22 +42,10 @@ async function initSession() {
 }
 
 // ==========================================
-// 3. MAIN CORE ENGINE CORE FLOW
+// 3. MAIN CORE ENGINE FLOW
 // ==========================================
 async function startBot() {
-  // 👇 CRITICAL ACCIDENT PROTECTION: Clear session directory if creds are unreadable or broken
-  let authState;
-  try {
-    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
-  } catch (err) {
-    console.error('⚠️ Session data corruption found! Wiping old state folder for security...');
-    if (fs.existsSync(CONFIG.SESSION_DIR)) {
-      fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
-    }
-    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
-  }
-
-  const { state, saveCreds } = authState;
+  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   let version = [2, 3000, 1017577546];
   try {
     const latest = await fetchLatestWaWebVersion();
@@ -74,14 +60,10 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
+  // 🕒 Automated 15-Minute Broadcast Interval Loop
   setInterval(async () => {
     try {
       if (!isLoopActive()) return;
-
-      const activeAdmin = getActiveAdminForTime();
-      if (!activeAdmin) return; 
-
       const targetGroupIds = getAuthorizedPosterGroups();
       if (targetGroupIds.length === 0) return;
 
@@ -89,95 +71,88 @@ async function startBot() {
       for (const groupId of targetGroupIds) {
         try {
           await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(r => setTimeout(r, 2000)); // Anti-ban pacing stagger
+          await new Promise(r => setTimeout(r, 2000));
         } catch (e) {
-          console.error(`Loop error dispatching to target group ${groupId}:`, e.message);
+          console.error(`Broadcast distribution error: ${groupId}`, e.message);
         }
       }
-    } catch (err) {
-      console.error("Global broadcasting engine processing exception:", err);
-    }
+    } catch (err) {}
   }, 15 * 60 * 1000);
 
-  // Connection State Handling
+  // Connection Management Flow
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      
-      // If session encryption has completely failed, clean up files and reboot cleanly
-      if (lastDisconnect?.error?.message?.includes('Unsupported state')) {
-        console.log('🚨 Crypto state error isolated. Cleaning local state files and recycling session...');
-        if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
-        setTimeout(() => startBot(), 2000);
-      } else if (statusCode !== DisconnectReason.loggedOut) {
-        setTimeout(() => startBot(), 5000);
-      }
+      if (statusCode !== DisconnectReason.loggedOut) setTimeout(() => startBot(), 5000);
     }
     
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
-      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
-      if (rawOwner) {
-        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
-        const ownerJid = `${rawOwner}@s.whatsapp.net`;
+      
+      // 🚀 ALIVE DISPATCHER (Forced targeting via explicitly clean Config settings)
+      setTimeout(async () => {
         try {
-          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
-          await sock.sendMessage(ownerJid, { text: aliveAlert });
-        } catch (err) {}
-      }
+          const targetOwnerJid = CONFIG.OWNER || `${CONFIG.OWNER_NUMBER}@s.whatsapp.net`;
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational! Ready to receive matchmaking traffic.`;
+          
+          await sock.sendMessage(targetOwnerJid, { text: aliveAlert });
+          console.log(`📬 Startup alert cleanly pushed to: ${targetOwnerJid}`);
+        } catch (err) {
+          console.error("Failed to send alive alert to owner inbox:", err.message);
+        }
+      }, 5000); 
     }
   });
 
   sock.ev.on('creds.update', saveCreds);
   
-  sock.ev.on('group-participants.update', async (update) => {
-    try { await handleGroupParticipants(sock, update); } catch (e) {}
-  });
-
   // ==========================================
-  // 4. CHAT SYSTEM FLOW ROUTER
+  // 4. GLOBAL CHAT ROUTER PIPELINE
   // ==========================================
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg.message) return;
 
-    const sender = msg.key.participant || msg.key.remoteJid;
-    const isGroup = msg.key.remoteJid.endsWith('@g.us');
-    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
-
+    // 🛡️ ADVANCED TEXT EXTRACTION MATRIX (Solves the new Session / Web Version structure shifts)
+    const text = msg.message.conversation || 
+                 msg.message.extendedTextMessage?.text || 
+                 msg.message.imageMessage?.caption || 
+                 msg.message.videoMessage?.caption ||
+                 msg.message.viewOnceMessageV2?.message?.imageMessage?.caption ||
+                 msg.message.viewOnceMessageV2?.message?.extendedTextMessage?.text ||
+                 '';
+                 
     if (!text) return;
+
+    // Prevent loops from outgoing texts, but still allow owner to type dot commands from the bot account
+    if (msg.key.fromMe && !text.startsWith(CONFIG.PREFIX)) return;
+
+    const remoteJid = msg.key.remoteJid;
+    const isGroupOrChannel = remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter');
     
-    const isOwnerOrAdmin = verifyAuthority(sender);
-    const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    // 🔍 MULTI-LAYER SENDER TRACER (Finds clean sender number inside all old/new group metadata updates)
+    const rawSender = msg.key.participant || msg.participant || remoteJid;
+    
+    // Bypasses all security checks entirely if the message is sent straight from the bot profile session
+    const isOwnerOrAdmin = msg.key.fromMe || verifyAuthority(rawSender, msg);
 
-    // 🔒 PRIVACY BYPASS ENGINE
-    if (privateUsers.includes(cleanSenderNum)) return; 
-
-    // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
+    // ⚡ Pipeline 1: Command System (Starts with Prefix Symbol)
     if (text.startsWith(CONFIG.PREFIX)) {
+      if (isGroupOrChannel && !isOwnerOrAdmin) return;
+
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
-      // Owner Override Module
-      if (commandName === 'owner') {
-        const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-        await sock.sendMessage(msg.key.remoteJid, { 
-          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
-        });
-        return;
-      }
-
       if (commands[commandName]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
-        
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'activate', 'deactivate', 'status', 'testpost', 'set'];
         if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED*\nYour ID does not hold admin clearance.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
@@ -188,13 +163,13 @@ async function startBot() {
       return; 
     }
 
-    // ⚡ Pipeline 2: Conversational Engine (Only active inside Private Messages)
-    if (isGroup) return;
+    // ⚡ Pipeline 2: Conversational AI Engine (STRICTLY FOR DIRECT PRIVATE DMs ONLY)
+    if (isGroupOrChannel) return;
 
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
-      console.error("AI execution fallback channel error:", e);
+      console.error("Interaction flow fallback exception:", e);
     }
   });
 }
