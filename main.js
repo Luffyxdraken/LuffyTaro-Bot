@@ -5,7 +5,15 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js'; 
-import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage, privateUsers } from './plugins/commands.js';
+import { 
+  commands, 
+  getActiveAdminForTime, 
+  getAuthorizedPosterGroups, 
+  verifyAuthority, 
+  buildLobbyMessage, 
+  privateUsers,
+  isLoopActive
+} from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
 
 // ==========================================
@@ -54,11 +62,15 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Maintained Safely)
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Fully Operational)
   setInterval(async () => {
     try {
+      // Check if administration has set the global toggle to active
+      if (!isLoopActive()) return;
+
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return; 
+
       const targetGroupIds = getAuthorizedPosterGroups();
       if (targetGroupIds.length === 0) return;
 
@@ -66,10 +78,14 @@ async function startBot() {
       for (const groupId of targetGroupIds) {
         try {
           await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(r => setTimeout(r, 1500));
-        } catch (e) {}
+          await new Promise(r => setTimeout(r, 2000)); // Anti-ban pacing stagger
+        } catch (e) {
+          console.error(`Loop error dispatching to target group ${groupId}:`, e.message);
+        }
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error("Global broadcasting engine processing exception:", err);
+    }
   }, 15 * 60 * 1000);
 
   // Connection State Handling
@@ -136,7 +152,7 @@ async function startBot() {
       }
 
       if (commands[targetCmd]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public'];
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
         
         if (adminOnlyCmds.includes(targetCmd)) {
           if (isOwnerOrAdmin) {
@@ -153,7 +169,7 @@ async function startBot() {
 
     if (isGroup) return;
 
-    // 🤖 Pure AI Fallback Router (Fires cleanly only if no dot commands match)
+    // 🤖 Pure AI Fallback Router
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
