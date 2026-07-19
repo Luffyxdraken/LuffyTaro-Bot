@@ -99,15 +99,21 @@ async function startBot() {
     
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
-      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
-      if (rawOwner) {
-        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
-        const ownerJid = `${rawOwner}@s.whatsapp.net`;
-        try {
-          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
-          await sock.sendMessage(ownerJid, { text: aliveAlert });
-        } catch (err) {}
-      }
+      
+      // 🔔 STABILIZED STARTUP ALIVE NOTIFICATION MODULE
+      setTimeout(async () => {
+        let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+        if (rawOwner) {
+          if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
+          const ownerJid = `${rawOwner}@s.whatsapp.net`;
+          try {
+            const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
+            await sock.sendMessage(ownerJid, { text: aliveAlert });
+          } catch (err) {
+            console.error("Failed to send alive alert to owner:", err.message);
+          }
+        }
+      }, 6000); // 6-second timeout block ensures connection stability before messaging
     }
   });
 
@@ -122,7 +128,7 @@ async function startBot() {
   // ==========================================
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg.message) return;
 
     const sender = msg.key.participant || msg.key.remoteJid;
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
@@ -130,11 +136,12 @@ async function startBot() {
 
     if (!text) return;
     
-    const isOwnerOrAdmin = verifyAuthority(sender);
+    // Pass both sender and full message context object down to verification arrays
+    const isOwnerOrAdmin = verifyAuthority(sender, msg);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-    // 🔒 PRIVACY BYPASS ENGINE
-    if (privateUsers.includes(cleanSenderNum)) return; 
+    // 🔒 PRIVACY BYPASS ENGINE (Admins bypass restriction arrays to prevent self-lockouts)
+    if (privateUsers.includes(cleanSenderNum) && !isOwnerOrAdmin) return; 
 
     // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
     if (text.startsWith(CONFIG.PREFIX)) {
@@ -151,7 +158,7 @@ async function startBot() {
       }
 
       if (commands[commandName]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost', 'set'];
         
         if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
@@ -163,11 +170,13 @@ async function startBot() {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
         }
       } else {
-        // Unknown command entered; send to menu to show user valid selections
         try { await commands.menu(sock, msg); } catch (err) { console.error(err); }
       }
-      return; // 🛑 CRITICAL: Stops commands from slipping into the AI Fallback channel below!
+      return; 
     }
+
+    // Block your own outgoing normal conversational responses from logging to AI Fallback
+    if (msg.key.fromMe) return;
 
     // ⚡ Pipeline 2: Conversational Engine (Only active inside Private Messages)
     if (isGroup) return;
