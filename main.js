@@ -15,7 +15,7 @@ import {
 } from './plugins/commands.js';
 
 // ==========================================
-// 1. HEALTH CHECK HTTP ENGINE (Render Container Keep-Alive)
+// 1. HEALTH CHECK HTTP ENGINE (Render Keep-Alive)
 // ==========================================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
@@ -60,10 +60,23 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Broadcast Interval Loop
+  // 🕒 Automated 15-Minute Broadcast Loop (Active 10:45 AM - 11:45 PM IST)
   setInterval(async () => {
     try {
       if (!isLoopActive()) return;
+
+      const now = new Date();
+      const istOffset = 5.5 * 60 * 60 * 1000;
+      const istDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istOffset);
+      const hours = istDate.getHours();
+      const minutes = istDate.getMinutes();
+      const currentTimeValue = (hours * 100) + minutes; 
+
+      // Strict Operating Window: 10:45 AM (1045) to 11:45 PM (2345)
+      if (currentTimeValue < 1045 || currentTimeValue > 2345) {
+        return; 
+      }
+
       const targetGroupIds = getAuthorizedPosterGroups();
       if (targetGroupIds.length === 0) return;
 
@@ -92,14 +105,17 @@ async function startBot() {
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      // 🚀 ALIVE DISPATCHER (Forced targeting via explicitly clean Config settings)
+      // 🚀 FIXED ALIVE DISPATCHER: Forces clean targeting to your personal phone DM number
       setTimeout(async () => {
         try {
-          const targetOwnerJid = CONFIG.OWNER || `${CONFIG.OWNER_NUMBER}@s.whatsapp.net`;
-          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational! Ready to receive matchmaking traffic.`;
+          let targetOwnerJid = CONFIG.OWNER || "917866052212@s.whatsapp.net";
+          if (!targetOwnerJid.endsWith('@s.whatsapp.net')) {
+            targetOwnerJid = `${targetOwnerJid.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
+          }
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational! Ready to receive matchmaking traffic in Private DMs.`;
           
           await sock.sendMessage(targetOwnerJid, { text: aliveAlert });
-          console.log(`📬 Startup alert cleanly pushed to: ${targetOwnerJid}`);
+          console.log(`📬 Startup alert cleanly pushed directly to Owner DM: ${targetOwnerJid}`);
         } catch (err) {
           console.error("Failed to send alive alert to owner inbox:", err.message);
         }
@@ -116,7 +132,12 @@ async function startBot() {
     const msg = messages[0];
     if (!msg.message) return;
 
-    // 🛡️ ADVANCED TEXT EXTRACTION MATRIX (Solves the new Session / Web Version structure shifts)
+    const remoteJid = msg.key.remoteJid;
+    const isGroup = remoteJid.endsWith('@g.us');
+    const isChannel = remoteJid.endsWith('@newsletter');
+    const isPrivateDm = remoteJid.endsWith('@s.whatsapp.net');
+
+    // 🛡️ REPAIRED EXTRACTOR: Captures nested text arrays from new session tokens perfectly
     const text = msg.message.conversation || 
                  msg.message.extendedTextMessage?.text || 
                  msg.message.imageMessage?.caption || 
@@ -127,21 +148,17 @@ async function startBot() {
                  
     if (!text) return;
 
-    // Prevent loops from outgoing texts, but still allow owner to type dot commands from the bot account
+    // Prevent loop spam from the bot account, but allow dot commands to run
     if (msg.key.fromMe && !text.startsWith(CONFIG.PREFIX)) return;
 
-    const remoteJid = msg.key.remoteJid;
-    const isGroupOrChannel = remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter');
-    
-    // 🔍 MULTI-LAYER SENDER TRACER (Finds clean sender number inside all old/new group metadata updates)
+    // Universal sender tracing array
     const rawSender = msg.key.participant || msg.participant || remoteJid;
-    
-    // Bypasses all security checks entirely if the message is sent straight from the bot profile session
     const isOwnerOrAdmin = msg.key.fromMe || verifyAuthority(rawSender, msg);
 
-    // ⚡ Pipeline 1: Command System (Starts with Prefix Symbol)
+    // ⚡ Pipeline 1: Dot Command Processors (`.set`, `.slots`, etc.)
     if (text.startsWith(CONFIG.PREFIX)) {
-      if (isGroupOrChannel && !isOwnerOrAdmin) return;
+      // Security Gate: Block non-admins from triggering commands inside Groups and Channels
+      if ((isGroup || isChannel) && !isOwnerOrAdmin) return;
 
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
@@ -158,13 +175,15 @@ async function startBot() {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
         }
       } else {
+        // Fallback to menu if command doesn't exist
         try { await commands.menu(sock, msg); } catch (err) { console.error(err); }
       }
       return; 
     }
 
-    // ⚡ Pipeline 2: Conversational AI Engine (STRICTLY FOR DIRECT PRIVATE DMs ONLY)
-    if (isGroupOrChannel) return;
+    // ⚡ Pipeline 2: Conversational AI Engine
+    // 🛑 CRITICAL SAFETY GUARD: Blocks conversational AI completely from Groups and Channels!
+    if (!isPrivateDm) return;
 
     try {
       await commands.handleAiFallback(sock, msg, text);
