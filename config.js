@@ -1,6 +1,6 @@
 // config.js
 export const CONFIG = {
-  BOT_NUMBER: '919382276553',     // 🤖 Your Bot Number
+  BOT_NUMBER: '916297526611',     // 🤖 Your Bot Number
   OWNER_NUMBER: '917866052212',   // 👑 Your Personal Number (Used for system status & alerts)
   PREFIX: '.',
   SESSION_DIR: './session',
