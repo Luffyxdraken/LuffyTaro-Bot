@@ -10,6 +10,7 @@ import {
   getActiveAdminForTime, 
   getAuthorizedPosterGroups, 
   verifyAuthority, 
+  hasSystemAccessClearance,
   buildLobbyMessage, 
   isLoopActive
 } from './plugins/commands.js';
@@ -153,23 +154,28 @@ async function startBot() {
 
     // Universal sender tracing array
     const rawSender = msg.key.participant || msg.participant || remoteJid;
+    
+    // 🛡️ DUAL-LAYER SECURITY VERIFICATION
     const isOwnerOrAdmin = msg.key.fromMe || verifyAuthority(rawSender, msg);
+    const hasClearance = msg.key.fromMe || hasSystemAccessClearance(rawSender, msg);
 
     // ⚡ Pipeline 1: Dot Command Processors (`.set`, `.slots`, etc.)
     if (text.startsWith(CONFIG.PREFIX)) {
-      // Security Gate: Block non-admins from triggering commands inside Groups and Channels
-      if ((isGroup || isChannel) && !isOwnerOrAdmin) return;
+      // Security Gate: Block non-authorized tokens from running prefixes inside Groups and Channels
+      if ((isGroup || isChannel) && !hasClearance) return;
 
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
       if (commands[commandName]) {
         const adminOnlyCmds = ['authorize', 'unauthorize', 'activate', 'deactivate', 'status', 'testpost', 'set'];
+        
         if (adminOnlyCmds.includes(commandName)) {
+          // 🛑 CHANNEL BYPASS RESTRICTION: The channel has routing clearance, but drops dead here at the admin tool gate
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED*\nYour ID does not hold admin clearance.` });
+            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED*\nYour ID does not hold master admin privileges.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
