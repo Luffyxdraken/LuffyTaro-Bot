@@ -7,11 +7,14 @@ const openai = process.env.GROQ_API_KEY ? new OpenAI({
   baseURL: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
 }) : null;
 
-// 👥 MASTER ADMIN AUTHENTICATION LIST (Using strict string checks)
+// 👥 MASTER ADMIN AUTHENTICATION MATRIX (Core Numbers + Group Admin Verification Contexts)
 const AUTHORIZED_ADMINS = [
   "917866052212", // Head Owner
   "919954865200", // Shift Host 
-  "919158210010"  // Backup Shift Host
+  "919158210010", // Backup Shift Host
+  "200747358617611", // Authorized Group Context ID 1
+  "69652038295727",  // Authorized Group Context ID 2
+  "67774785306684"   // Authorized Group Context ID 3
 ];
 
 export let privateUsers = []; 
@@ -20,7 +23,7 @@ let loopRunningStatus = true;
 const userInteractionCache = {};
 
 // ==========================================
-// 💾 LIVE CHAT DATABASE STORAGE (Editable from WhatsApp)
+// 💾 LIVE CHAT DATABASE STORAGE (Editable via Chat)
 // ==========================================
 let LIVE_SCRIM_DATABASE = {
   slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• Match 1 (06:00 PM): 14/25 Slots Filled\n• Match 2 (08:00 PM): 19/25 Slots Filled\n• Match 3 (10:00 PM): 05/25 Slots Filled\n\n💬 Send your team lineup to secure a position now!`,
@@ -79,17 +82,27 @@ export function getAuthorizedPosterGroups() { return authorizedGroups; }
 export function isLoopActive() { return loopRunningStatus; }
 export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 
-// Fixed authority checks using strict equality (===)
-export function verifyAuthority(sender) { 
+// Comprehensive dual-layer validation for checking both context string keys and pure sender numbers
+export function verifyAuthority(sender, msg) { 
   if (!sender) return false;
-  const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  return AUTHORIZED_ADMINS.some(adminNum => cleanNum === adminNum);
+  
+  const cleanSender = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const participant = msg?.key?.participant ? msg.key.participant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
+  const remoteJid = msg?.key?.remoteJid ? msg.key.remoteJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
+
+  return AUTHORIZED_ADMINS.some(adminNum => 
+    cleanSender === adminNum || 
+    (participant && participant === adminNum) || 
+    (remoteJid && remoteJid === adminNum)
+  );
 }
 
-export function isHeadAdmin(sender) {
+export function isHeadAdmin(sender, msg) {
   if (!sender) return false;
-  const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  return cleanNum === AUTHORIZED_ADMINS[0];
+  const cleanSender = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const participant = msg?.key?.participant ? msg.key.participant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
+  
+  return cleanSender === AUTHORIZED_ADMINS[0] || (participant && participant === AUTHORIZED_ADMINS[0]);
 }
 
 // ==========================================
@@ -109,8 +122,11 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   help: async (sock, msg) => { 
-    const currentAdmin = getActiveAdminForTime();
-    const text = `🚨 *PIRATES HELP DESK* 🚨\n───────────────────────────\nNeed assistance with slots, payments, or registration?\n\n💬 *Contact the Active Shift Admin immediately:* wa.me/${currentAdmin}`;
+    const text = `🚨 *PIRATES DIRECT HELP CLEARANCE* 🚨\n───────────────────────────\n` +
+      `📩 *Owner/Head Management:* wa.me/917866052212\n` +
+      `🕒 *Afternoon Shift Controller:* wa.me/919954865200\n` +
+      `🛡️ *Backup Desk Operator:* wa.me/919158210010\n\n` +
+      `Drop your team tags or receipt confirmations directly to the active links above.`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   guidelines: async (sock, msg) => {
@@ -155,9 +171,9 @@ export const commands = {
   iamadmin: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-    const structuralTitle = isHeadAdmin(sender) ? "👑 *HEAD SYSTEM CONTROLLER*" : "🛡️ *AUTHORIZED ADMIN CLEARANCE*";
+    const structuralTitle = isHeadAdmin(sender, msg) ? "👑 *HEAD SYSTEM CONTROLLER*" : "🛡️ *AUTHORIZED ADMIN CLEARANCE*";
     await sock.sendMessage(msg.key.remoteJid, { 
-      text: `${structuralTitle}\n───────────────────────────\nIdentity Verified! Admin Number \`${cleanNum}\` holds full structural management privileges.` 
+      text: `${structuralTitle}\n───────────────────────────\nIdentity Verified! Admin Identifier \`${cleanNum}\` holds full structural management privileges.` 
     });
   },
   activate: async (sock, msg) => {
@@ -212,7 +228,7 @@ export const commands = {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
     const channelLink = "https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F";
-    const isSenderAdmin = verifyAuthority(msg.key.participant || msg.key.remoteJid);
+    const isSenderAdmin = verifyAuthority(msg.key.remoteJid, msg);
 
     if (!userInteractionCache[targetJid]) {
       userInteractionCache[targetJid] = { interactionCount: 0 };
@@ -248,7 +264,7 @@ export const commands = {
     // Skip formal dot commands from hitting AI fallback
     if (userMessage.startsWith(CONFIG.PREFIX)) return;
 
-    // 🛑 3. ST STRICTLY BOXED FREE GROQ LAYER (With Topic Containment)
+    // 🛑 3. STRICTLY BOXED FREE GROQ LAYER (With Topic Containment Guardrails)
     if (openai) {
       try {
         const completion = await openai.chat.completions.create({
@@ -282,10 +298,9 @@ export const commands = {
     }
 
     // 🛑 4. RANDOMIZED FALLBACK ENGINE
-    const currentAdmin = getActiveAdminForTime();
     const fallbackVariations = [
-      `🏴‍☠️ *Pirates Automated Scrim Support*\n───────────────────────────\nI didn't quite grasp that request, warrior. Send \`.menu\` to see our commands layout, or register directly with our active shift host at wa.me/${currentAdmin}\n\n📢 *Official Channel:* ${channelLink}`,
-      `🏴‍☠️ *LuffyTaro System Alert*\n───────────────────────────\nOur registration paths are completely automated. Type \`slots\` to see open match spots, or secure tags by joining the main deck.\n\n📢 *Join Channel:* ${channelLink}`
+      `🏴‍☠️ *Pirates Automated Scrim Support*\n───────────────────────────\nI didn't quite grasp that request, warrior. Type *help* to contact our direct shift host links right away.\n\n📢 *Official Channel:* ${channelLink}`,
+      `🏴‍☠️ *LuffyTaro System Alert*\n───────────────────────────\nOur registration paths are completely automated. Type \`slots\` to see open match spots, or type *help* to ping management.\n\n📢 *Join Channel:* ${channelLink}`
     ];
 
     const randomSelection = fallbackVariations[Math.floor(Math.random() * fallbackVariations.length)];
