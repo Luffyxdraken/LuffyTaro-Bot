@@ -1,7 +1,8 @@
 import { CONFIG } from '../config.js'; 
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Safe instantiation of OpenAI Engine
+const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
 
 // 👥 MULTI-ADMIN SECURITY ENGINE
 const AUTHORIZED_ADMINS = [
@@ -29,20 +30,15 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const currentTimeValue = (hours * 100) + minutes; 
 
-  // Shift 1: 10:30 AM to 02:45 PM (14:45)
   if (currentTimeValue >= 1030 && currentTimeValue <= 1445) {
-    return "919158210010";
-  }
-  // Shift 2: 05:00 PM (17:00) to 07:15 PM (19:15)
-  else if (currentTimeValue >= 1700 && currentTimeValue <= 1915) {
-    return "917866052212";
-  }
-  // Shift 3: 07:30 PM (19:30) to 09:45 PM (21:45)
-  else if (currentTimeValue >= 1930 && currentTimeValue <= 2145) {
-    return "919954865200";
+    return "919158210010"; // Shift 1
+  } else if (currentTimeValue >= 1700 && currentTimeValue <= 1915) {
+    return "917866052212"; // Shift 2
+  } else if (currentTimeValue >= 1930 && currentTimeValue <= 2145) {
+    return "919954865200"; // Shift 3
   }
 
-  return "917866052212";
+  return "917866052212"; // Default fallback
 }
 
 // ==========================================
@@ -70,7 +66,6 @@ export function buildLobbyMessage() {
     `🏴‍☠️ *PIRATES™ ULTIMATE SHOWDOWN* 🏴‍☠️\n\n> 📌 IDP IN HAND @all\n*1V1 TO 4V4 SKILL LOBBIES OPEN*\n*ENTRY - 10/20/30/50/100 RS*\n\n_*DM FOR Roster Tags :- ${contactLink}*_ 🔥`
   ];
 
-  // Pick a random template layout from the array (0 to 7)
   const randomIndex = Math.floor(Math.random() * variations.length);
   return variations[randomIndex];
 }
@@ -229,7 +224,7 @@ export const commands = {
   },
 
   // ==========================================
-  // 🤖 THE STABILIZED AI FALLBACK ROUTER
+  // 🤖 SMART AI FALLBACK ROUTER
   // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
@@ -241,9 +236,22 @@ export const commands = {
     }
     userInteractionCache[targetJid].interactionCount += 1;
 
+    // Fast static text interception for basic identity queries
     if (lowerMessage.includes('who are you') || lowerMessage.includes('your name') || lowerMessage.includes('what are you')) {
       const identityText = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI am the dedicated system bot for *Pirates Paid Scrims*. I manage entry configurations, schedule notifications, and slot lineups automatically inside our matches.`;
       return await sock.sendMessage(targetJid, { text: identityText });
+    }
+
+    // Smart Router: If user types slot/price/rules, execute the precise built-in command layout instead of calling AI
+    if (lowerMessage.includes('slot')) return await commands.slots(sock, msg);
+    if (lowerMessage.includes('price') || lowerMessage.includes('fee')) return await commands.price(sock, msg);
+    if (lowerMessage.includes('rule') || lowerMessage.includes('guideline')) return await commands.rules(sock, msg);
+    if (lowerMessage.includes('schedule') || lowerMessage.includes('time')) return await commands.schedule(sock, msg);
+
+    // If API Key is missing entirely, skip openai execution gracefully
+    if (!openai) {
+      const defaultInfo = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nI didn't quite catch that. Type \`.menu\` to see my active command shortcuts or check slots!`;
+      return await sock.sendMessage(targetJid, { text: defaultInfo });
     }
 
     try {
@@ -253,17 +261,17 @@ export const commands = {
           { 
             role: 'system', 
             content: `You are LuffyTaro Bot, the bold pirate-themed automated support assistant for "Pirates Paid Scrims". 
-            Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.).`
+            Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.). Keep answers short and direct.`
           },
           { role: 'user', content: userMessage }
         ],
       });
 
       let replyText = completion.choices[0]?.message?.content || "";
-      if (!replyText) throw new Error("Empty OpenAI response parsing block.");
+      if (!replyText) throw new Error("Empty OpenAI response.");
 
       const isFirstTime = userInteractionCache[targetJid].interactionCount <= 2;
-      const structuralSignals = ['hi', 'hello', 'hey', 'join', 'scrim', 'start', 'how to participate', 'what is this', 'about'];
+      const structuralSignals = ['hi', 'hello', 'hey', 'join', 'scrim', 'start', 'how to participate', 'what is this'];
       const explicitlyAskingIntro = structuralSignals.some(word => lowerMessage.includes(word));
 
       if (isFirstTime || explicitlyAskingIntro) {
@@ -274,8 +282,9 @@ export const commands = {
 
     } catch (err) {
       console.error("OpenAI Fallback Error Intercepted:", err.message);
-      const responseText = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! I'm here to handle entries, schedules, and slots for **Pirates Paid Scrims**.`;
-      await sock.sendMessage(targetJid, { text: responseText });
+      // Clean up fallback text to avoid sounding repetitive if error persist
+      const fallbackText = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey! Drop a line to our host or type \`.menu\` to look up available matches.`;
+      await sock.sendMessage(targetJid, { text: fallbackText });
     }
   }
 };
