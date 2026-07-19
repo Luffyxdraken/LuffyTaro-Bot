@@ -1,8 +1,11 @@
 import { CONFIG } from '../config.js'; 
 import OpenAI from 'openai';
 
-// Safe instantiation of OpenAI Engine
-const openai = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+// Safe instantiation using Groq's compatibility layer
+const openai = process.env.GROQ_API_KEY ? new OpenAI({ 
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
+}) : null;
 
 // 👥 MULTI-ADMIN SECURITY ENGINE
 const AUTHORIZED_ADMINS = [
@@ -216,7 +219,7 @@ export const commands = {
   },
 
   // ==========================================
-  // 🤖 SMART ROUTER & AI ARCHITECTURE
+  // 🤖 SMART ROUTER & GROQ AI ARCHITECTURE
   // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
@@ -228,60 +231,63 @@ export const commands = {
     }
     userInteractionCache[targetJid].interactionCount += 1;
 
-    // 🛑 1. CRITICAL OVERRIDE: Fast interception for basic queries (Stops fallback loop leaks)
+    // 🛑 1. SYSTEM IDENTITY TRIGGERS
     if (lowerMessage.includes('who are you') || lowerMessage.includes('your name') || lowerMessage.includes('what are you') || lowerMessage.includes('who made you')) {
       const identityText = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI am the dedicated system bot for *Pirates Paid Scrims*. I manage entry configurations, schedule notifications, and slot lineups automatically inside our matches.`;
       return await sock.sendMessage(targetJid, { text: identityText });
     }
 
-    // 🛑 2. TEXT-BASED COMMAND ROUTING (Works without dots for normal users)
-    if (lowerMessage === 'help' || lowerMessage === 'admin') {
+    // 🛑 2. LOCAL COMMAND INTERCEPTORS (Triggers instantly without dot prefix)
+    if (lowerMessage === 'help' || lowerMessage === 'admin' || lowerMessage === 'hi' || lowerMessage === 'hello') {
       return await commands.help(sock, msg);
     }
     if (lowerMessage.includes('slot')) return await commands.slots(sock, msg);
-    if (lowerMessage.includes('price') || lowerMessage.includes('fee') || lowerMessage.includes('paid scrims')) return await commands.price(sock, msg);
+    if (lowerMessage.includes('price') || lowerMessage.includes('fee') || lowerMessage.includes('paid scrims') || lowerMessage.includes('pay')) return await commands.price(sock, msg);
     if (lowerMessage.includes('rule') || lowerMessage.includes('guideline')) return await commands.rules(sock, msg);
-    if (lowerMessage.includes('schedule') || lowerMessage.includes('time')) return await commands.schedule(sock, msg);
+    if (lowerMessage.includes('schedule') || lowerMessage.includes('time') || lowerMessage.includes('timetable')) return await commands.schedule(sock, msg);
+    if (lowerMessage.includes('tournament') || lowerMessage.includes('match') || lowerMessage.includes('scrim')) return await commands.tournament(sock, msg);
+    if (lowerMessage.includes('payout') || lowerMessage.includes('win') || lowerMessage.includes('prize')) return await commands.payout(sock, msg);
 
-    // If the message started with the command prefix, do not process it through OpenAI
+    // Guardrail: Skip prefix calls leaking to AI
     if (userMessage.startsWith(CONFIG.PREFIX)) return;
 
-    // 🛑 3. API STATUS GUARDRAIL
-    if (!openai) {
-      const currentAdmin = getActiveAdminForTime();
-      const defaultInfo = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nEntries and matching systems are fully automated. Type \`.menu\` to look up open slot balances, or drop a line directly to our shift admin at wa.me/${currentAdmin}`;
-      return await sock.sendMessage(targetJid, { text: defaultInfo });
-    }
+    // 🛑 3. LIVE FREE GROQ PROCESSING CORE (Ultra High-Speed Layer)
+    if (openai) {
+      try {
+        const completion = await openai.chat.completions.create({
+          model: 'llama-3.1-8b-instant', // Free high speed Groq engine model
+          messages: [
+            { 
+              role: 'system', 
+              content: `You are LuffyTaro Bot, the bold pirate-themed automated support assistant for "Pirates Paid Scrims". 
+              Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.). Keep answers short, direct, and under 3 lines max.`
+            },
+            { role: 'user', content: userMessage }
+          ],
+        });
 
-    // 🛑 4. AI LIVE CHANNEL PROCESSING
-    try {
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini', 
-        messages: [
-          { 
-            role: 'system', 
-            content: `You are LuffyTaro Bot, the bold pirate-themed automated support assistant for "Pirates Paid Scrims". 
-            Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.). Keep answers short and direct.`
-          },
-          { role: 'user', content: userMessage }
-        ],
-      });
-
-      let replyText = completion.choices[0]?.message?.content || "";
-      if (!replyText) throw new Error("Empty OpenAI response.");
-
-      const isFirstTime = userInteractionCache[targetJid].interactionCount <= 2;
-      if (isFirstTime || ['hi', 'hello', 'hey', 'join', 'scrim'].some(word => lowerMessage.includes(word))) {
-        replyText += `\n\n📢 *Join our Official Channel to Participate:* ${channelLink}`;
+        let replyText = completion.choices[0]?.message?.content || "";
+        if (replyText) {
+          const isFirstTime = userInteractionCache[targetJid].interactionCount <= 2;
+          if (isFirstTime || ['join', 'link', 'group'].some(word => lowerMessage.includes(word))) {
+            replyText += `\n\n📢 *Join our Official Channel to Participate:* ${channelLink}`;
+          }
+          return await sock.sendMessage(targetJid, { text: replyText });
+        }
+      } catch (err) {
+        console.error("Groq API execution encountered an error:", err.message);
       }
-
-      await sock.sendMessage(targetJid, { text: replyText });
-
-    } catch (err) {
-      console.error("OpenAI Fallback Error Intercepted:", err.message);
-      const currentAdmin = getActiveAdminForTime();
-      const fallbackText = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nEntries are fully open. Type \`.menu\` to see active structural shortcuts or reach our active host at wa.me/${currentAdmin}`;
-      await sock.sendMessage(targetJid, { text: fallbackText });
     }
+
+    // 🛑 4. RANDOMIZED FALLBACK ENGINE
+    const currentAdmin = getActiveAdminForTime();
+    const fallbackVariations = [
+      `🏴‍☠️ *Pirates Automated Scrim Support*\n───────────────────────────\nI didn't quite grasp that request, warrior. Send \`.menu\` to see our commands layout, or register directly with our active shift host at wa.me/${currentAdmin}\n\n📢 *Official Channel:* ${channelLink}`,
+      `🏴‍☠️ *LuffyTaro System Alert*\n───────────────────────────\nOur registration paths are completely automated. Type \`.slots\` to see open match spots, or secure tags by joining the main deck.\n\n📢 *Join Channel:* ${channelLink}`,
+      `🏴‍☠️ *Pirates Battle Ground*\n───────────────────────────\nMatchmaking queues are moving fast! Type \`.schedule\` to confirm map times or sync directly with the shift leader at wa.me/${currentAdmin}\n\n📢 *Official Channel Link:* ${channelLink}`
+    ];
+
+    const randomSelection = fallbackVariations[Math.floor(Math.random() * fallbackVariations.length)];
+    await sock.sendMessage(targetJid, { text: randomSelection });
   }
 };
