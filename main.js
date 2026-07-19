@@ -11,6 +11,7 @@ import {
   getAuthorizedPosterGroups, 
   verifyAuthority, 
   buildLobbyMessage, 
+  privateUsers,
   isLoopActive
 } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
@@ -46,7 +47,19 @@ async function initSession() {
 // 3. MAIN CORE ENGINE CORE FLOW
 // ==========================================
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  // 👇 CRITICAL ACCIDENT PROTECTION: Clear session directory if creds are unreadable or broken
+  let authState;
+  try {
+    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  } catch (err) {
+    console.error('⚠️ Session data corruption found! Wiping old state folder for security...');
+    if (fs.existsSync(CONFIG.SESSION_DIR)) {
+      fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+    }
+    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  }
+
+  const { state, saveCreds } = authState;
   let version = [2, 3000, 1017577546];
   try {
     const latest = await fetchLatestWaWebVersion();
@@ -93,26 +106,28 @@ async function startBot() {
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      if (statusCode !== DisconnectReason.loggedOut) setTimeout(() => startBot(), 5000);
+      
+      // If session encryption has completely failed, clean up files and reboot cleanly
+      if (lastDisconnect?.error?.message?.includes('Unsupported state')) {
+        console.log('🚨 Crypto state error isolated. Cleaning local state files and recycling session...');
+        if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+        setTimeout(() => startBot(), 2000);
+      } else if (statusCode !== DisconnectReason.loggedOut) {
+        setTimeout(() => startBot(), 5000);
+      }
     }
     
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
-      
-      // 🚀 STABILIZED PRIVATE ALIVE MESSAGE (Sent ONLY to Owner DM)
-      setTimeout(async () => {
-        let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-        if (rawOwner) {
-          if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
-          const ownerJid = `${rawOwner}@s.whatsapp.net`;
-          try {
-            const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
-            await sock.sendMessage(ownerJid, { text: aliveAlert });
-          } catch (err) {
-            console.error("Failed to send alive alert to owner:", err.message);
-          }
-        }
-      }, 6000); 
+      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
+      if (rawOwner) {
+        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
+        const ownerJid = `${rawOwner}@s.whatsapp.net`;
+        try {
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
+          await sock.sendMessage(ownerJid, { text: aliveAlert });
+        } catch (err) {}
+      }
     }
   });
 
@@ -127,45 +142,42 @@ async function startBot() {
   // ==========================================
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message) return;
+    if (!msg.message || msg.key.fromMe) return;
 
-    const remoteJid = msg.key.remoteJid;
-    const sender = msg.key.participant || remoteJid;
-    
-    // 🛡️ FILTER: Check if the message is coming from a Group or Channel Newsletter
-    const isGroupOrChannel = remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter');
-    
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
+
     if (!text) return;
     
-    const isOwnerOrAdmin = verifyAuthority(sender, msg);
+    const isOwnerOrAdmin = verifyAuthority(sender);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+    // 🔒 PRIVACY BYPASS ENGINE
+    if (privateUsers.includes(cleanSenderNum)) return; 
 
     // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
     if (text.startsWith(CONFIG.PREFIX)) {
-      // STRICTLY BLOCK ALL COMMANDS FROM RUNNING INSIDE GROUPS OR CHANNELS
-      if (isGroupOrChannel) return;
-
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
       // Owner Override Module
       if (commandName === 'owner') {
         const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-        await sock.sendMessage(remoteJid, { 
-          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}` 
+        await sock.sendMessage(msg.key.remoteJid, { 
+          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
         });
         return;
       }
 
       if (commands[commandName]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'activate', 'deactivate', 'status', 'testpost', 'set'];
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
         
         if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID does not hold admin clearance.` });
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
@@ -176,13 +188,9 @@ async function startBot() {
       return; 
     }
 
-    // Stop bot from handling its own outgoing conversational responses
-    if (msg.key.fromMe) return;
+    // ⚡ Pipeline 2: Conversational Engine (Only active inside Private Messages)
+    if (isGroup) return;
 
-    // ⚡ Pipeline 2: Conversational Engine (STRICTLY BLOCKED FOR GROUPS & CHANNELS)
-    if (isGroupOrChannel) return;
-
-    // 🔓 PUBLIC DM ACCESSIBILITY: Completely unblocked for all regular user DMs
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
