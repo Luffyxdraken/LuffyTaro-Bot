@@ -14,12 +14,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "@google/genai": "latest",
+    "dependencies": {
     "@whiskeysockets/baileys": "^6.6.0",
-    "better-sqlite3": "^11.8.0",
-    "canvas": "^2.11.2",
-    "pino": "^9.0.0",
+    "openai": "^4.28.0",
+    "pino": "^8.19.0",
     "qrcode-terminal": "^0.12.0"
-  }
+    }
 }
