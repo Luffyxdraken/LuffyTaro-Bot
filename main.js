@@ -11,7 +11,6 @@ import {
   getAuthorizedPosterGroups, 
   verifyAuthority, 
   buildLobbyMessage, 
-  privateUsers,
   isLoopActive
 } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
@@ -100,7 +99,7 @@ async function startBot() {
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      // 🔔 STABILIZED STARTUP ALIVE NOTIFICATION MODULE
+      // 🚀 STABILIZED PRIVATE ALIVE MESSAGE (Sent ONLY to Owner DM)
       setTimeout(async () => {
         let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
         if (rawOwner) {
@@ -113,7 +112,7 @@ async function startBot() {
             console.error("Failed to send alive alert to owner:", err.message);
           }
         }
-      }, 6000); // 6-second timeout block ensures connection stability before messaging
+      }, 6000); 
     }
   });
 
@@ -130,41 +129,43 @@ async function startBot() {
     const msg = messages[0];
     if (!msg.message) return;
 
-    const sender = msg.key.participant || msg.key.remoteJid;
-    const isGroup = msg.key.remoteJid.endsWith('@g.us');
+    const remoteJid = msg.key.remoteJid;
+    const sender = msg.key.participant || remoteJid;
+    
+    // 🛡️ FILTER: Check if the message is coming from a Group or Channel Newsletter
+    const isGroupOrChannel = remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter');
+    
     const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
-
     if (!text) return;
     
-    // Pass both sender and full message context object down to verification arrays
     const isOwnerOrAdmin = verifyAuthority(sender, msg);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-    // 🔒 PRIVACY BYPASS ENGINE (Admins bypass restriction arrays to prevent self-lockouts)
-    if (privateUsers.includes(cleanSenderNum) && !isOwnerOrAdmin) return; 
-
     // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
     if (text.startsWith(CONFIG.PREFIX)) {
+      // STRICTLY BLOCK ALL COMMANDS FROM RUNNING INSIDE GROUPS OR CHANNELS
+      if (isGroupOrChannel) return;
+
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
       // Owner Override Module
       if (commandName === 'owner') {
         const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-        await sock.sendMessage(msg.key.remoteJid, { 
-          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
+        await sock.sendMessage(remoteJid, { 
+          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}` 
         });
         return;
       }
 
       if (commands[commandName]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost', 'set'];
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'activate', 'deactivate', 'status', 'testpost', 'set'];
         
         if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID does not hold admin clearance.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
@@ -175,12 +176,13 @@ async function startBot() {
       return; 
     }
 
-    // Block your own outgoing normal conversational responses from logging to AI Fallback
+    // Stop bot from handling its own outgoing conversational responses
     if (msg.key.fromMe) return;
 
-    // ⚡ Pipeline 2: Conversational Engine (Only active inside Private Messages)
-    if (isGroup) return;
+    // ⚡ Pipeline 2: Conversational Engine (STRICTLY BLOCKED FOR GROUPS & CHANNELS)
+    if (isGroupOrChannel) return;
 
+    // 🔓 PUBLIC DM ACCESSIBILITY: Completely unblocked for all regular user DMs
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
