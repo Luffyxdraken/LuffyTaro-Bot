@@ -6,18 +6,22 @@ const openai = process.env.GROQ_API_KEY ? new OpenAI({
   baseURL: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
 }) : null;
 
-// 👥 CLEAN ADMIN SYSTEM ROUTING MATRIX (Numbers only! No channels inside this array!)
+// 👥 ADMIN SYSTEM ROUTING MATRIX
 const AUTHORIZED_ADMINS = [
   "917866052212",      // Head Owner
   "919954865200",      // Shift Host 
   "919158210010"       // Backup Shift Host
 ];
 
-// 🔓 CHANNEL BYPASS CODE (Separated out to protect configuration tools from arbitrary executions)
-const RUNTIME_CHANNEL_CODE = "120363410943628748";
-
 export let privateUsers = []; 
-let authorizedGroups = [];
+
+// 📢 PERMANENT AUTHORIZED BROADCAST TARGETS (Hardcoded to survive server restarts)
+let authorizedGroups = [
+  "200747358617611@g.us", // Authorized Group Context ID 1
+  "69652038295727@g.us",  // Authorized Group Context ID 2
+  "67774785306684@g.us"   // Authorized Group Context ID 3
+];
+
 let loopRunningStatus = true; 
 const userInteractionCache = {};
 
@@ -37,9 +41,8 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const currentTimeValue = (hours * 100) + minutes; 
 
-  // Dynamic Shift Switching Logic
-  if (currentTimeValue >= 1045 && currentTimeValue < 1700) return "919954865200"; // Afternoon Shift Admin
-  return "917866052212"; // Head Owner Primary Shift
+  if (currentTimeValue >= 1045 && currentTimeValue < 1700) return "919954865200"; 
+  return "917866052212"; 
 }
 
 export function buildLobbyMessage() {
@@ -59,28 +62,15 @@ export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 export function verifyAuthority(sender, msg) { 
   if (!sender) return false;
   
-  // Cleans out hidden multi-device tags (:1, :2) appended by new session identifiers
   const cleanSender = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const participant = msg?.key?.participant ? msg.key.participant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
   const remoteJid = msg?.key?.remoteJid ? msg.key.remoteJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
 
-  // Strict comparison against real admin phone number array
   return AUTHORIZED_ADMINS.some(adminNum => 
     cleanSender === adminNum || 
     participant === adminNum || 
     remoteJid === adminNum
   );
-}
-
-// 🚀 ROUTING ACCESS INTERCEPTOR GATES
-export function hasSystemAccessClearance(sender, msg) {
-  if (!sender) return false;
-  
-  const cleanSender = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  const remoteJid = msg?.key?.remoteJid ? msg.key.remoteJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
-  
-  // Grants access if it is a phone admin OR matching the exact Channel bypass code
-  return verifyAuthority(sender, msg) || cleanSender === RUNTIME_CHANNEL_CODE || remoteJid === RUNTIME_CHANNEL_CODE;
 }
 
 export function isHeadAdmin(sender, msg) {
@@ -176,9 +166,7 @@ export const commands = {
 
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
-    const sender = msg.key.participant || targetJid;
     const lowerMessage = userMessage.toLowerCase().trim();
-    const isSenderAdmin = verifyAuthority(sender, msg);
 
     if (!userInteractionCache[targetJid]) {
       userInteractionCache[targetJid] = { interactionCount: 0 };
@@ -189,7 +177,6 @@ export const commands = {
       return await sock.sendMessage(targetJid, { text: `🏴‍☠️ *LuffyTaro Automated Assistant*\nI am the system bot for *Pirates Paid Scrims*.` });
     }
 
-    // Prefix-Free Fast Catcher Handles (Strict Private DMs Only)
     if (lowerMessage === 'help' || lowerMessage === 'admin' || lowerMessage === 'hi' || lowerMessage === 'hello') return await commands.help(sock, msg);
     if (lowerMessage === 'slot' || lowerMessage === 'slots') return await commands.slots(sock, msg);
     if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
@@ -217,4 +204,3 @@ export const commands = {
     }
   }
 };
-      
