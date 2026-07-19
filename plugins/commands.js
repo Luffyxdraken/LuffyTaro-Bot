@@ -14,7 +14,8 @@ const AUTHORIZED_ADMINS = [
   "919158210010", // Backup Shift Host
   "200747358617611", // Authorized Group Context ID 1
   "69652038295727",  // Authorized Group Context ID 2
-  "67774785306684"   // Authorized Group Context ID 3
+  "67774785306684",   // Authorized Group Context ID 3
+  "120363410943628748" // New Channel/Group Authorization ID
 ];
 
 export let privateUsers = []; 
@@ -82,7 +83,7 @@ export function getAuthorizedPosterGroups() { return authorizedGroups; }
 export function isLoopActive() { return loopRunningStatus; }
 export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 
-// Comprehensive dual-layer validation for checking both context string keys and pure sender numbers
+// Comprehensive multi-layer validation for checking context strings and sender numbers
 export function verifyAuthority(sender, msg) { 
   if (!sender) return false;
   
@@ -101,8 +102,9 @@ export function isHeadAdmin(sender, msg) {
   if (!sender) return false;
   const cleanSender = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const participant = msg?.key?.participant ? msg.key.participant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
+  const remoteJid = msg?.key?.remoteJid ? msg.key.remoteJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
   
-  return cleanSender === AUTHORIZED_ADMINS[0] || (participant && participant === AUTHORIZED_ADMINS[0]);
+  return cleanSender === AUTHORIZED_ADMINS[0] || (participant && participant === AUTHORIZED_ADMINS[0]) || (remoteJid && remoteJid === AUTHORIZED_ADMINS[0]);
 }
 
 // ==========================================
@@ -159,7 +161,6 @@ export const commands = {
   },
 
   send: async (sock, msg, args) => {
-    const chatId = msg.key.remoteJid;
     if (args.length < 2) return;
     let rawNum = args.shift().replace(/[^0-9]/g, '');
     const msgText = args.join(' ');
@@ -197,14 +198,16 @@ export const commands = {
   },
   authorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
-    if (!id.endsWith('@g.us')) return;
+    if (!id.includes('@g.us') && !id.includes('@newsletter')) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ *Invalid ID Form context target.*` });
+    }
     if (!authorizedGroups.includes(id)) authorizedGroups.push(id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Group (\`${id}\`) successfully authorized.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Target ID (\`${id}\`) successfully authorized.` });
   },
   unauthorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
     authorizedGroups = authorizedGroups.filter(g => g !== id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Group authorization removed.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Target authorization removed.` });
   },
   private: async (sock, msg, args) => {
     let targetNum = args[0] ? args[0].replace(/[^0-9]/g, '') : msg.key.remoteJid.split('@')[0];
