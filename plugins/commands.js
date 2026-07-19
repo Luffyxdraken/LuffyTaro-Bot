@@ -1,14 +1,14 @@
 import { CONFIG } from '../config.js'; 
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
-// FIXED: Initialize the SDK with an empty configuration object to bypass the project check
-// It will automatically pick up process.env.GEMINI_API_KEY safely!
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY }); 
+// Initialize OpenAI instance using your Render environment variable configuration
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// Structural Admin Registry Track
 const AUTHORIZED_ADMINS = [
-  "917866052212", 
-  "919158210010", 
-  "919954865200",
+  "917866052212", // Primary Head Admin Device
+  "919158210010", // Secondary Admin Line
+  "919954865200", // Tertiary Admin Line
   "200747358617611" 
 ];
 
@@ -22,10 +22,18 @@ export function getAuthorizedPosterGroups() { return authorizedGroups; }
 export function isLoopActive() { return loopRunningStatus; }
 export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 
+// Verifies if the user is anywhere in the admin registry array
 export function verifyAuthority(sender) { 
   if (!sender) return false;
   const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   return AUTHORIZED_ADMINS.some(adminNum => cleanNum.includes(adminNum) || adminNum.includes(cleanNum));
+}
+
+// Explicit check to verify if the sender is specifically your primary Head account
+export function isHeadAdmin(sender) {
+  if (!sender) return false;
+  const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  return cleanNum.includes(AUTHORIZED_ADMINS[0]) || AUTHORIZED_ADMINS[0].includes(cleanNum);
 }
 
 export function buildLobbyMessage() {
@@ -33,9 +41,11 @@ export function buildLobbyMessage() {
 }
 
 export const commands = {
-  // --- 🌍 INFO TEXT DATA OUTPUTS ---
+  // ──────────────────────────────────────────
+  // 🌍 PUBLIC INFO COMMANDS
+  // ──────────────────────────────────────────
   menu: async (sock, msg) => {
-    const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n• \`menu\` / \`help\` - Show this master layout.\n• \`guidelines\` / \`rules\` - Match rules.\n• \`slots\` - Query open matches.\n• \`tournament\` - Details regarding tourneys.\n• \`price\` - Fee sheets for paid scrims.\n• \`schedule\` - Daily match timings.\n• \`payout\` - Prize distribution terms.\n\n👑 *Admin Command Panel* (Requires \`.\` prefix):\n• \`.iamadmin\` - Check authorization tags.\n• \`.activate\` - Turn broadcast loops ON.\n• \`.deactivate\` - Turn broadcast loops OFF.\n• \`.status\` - Get engine health metrics.\n• \`.private [num]\` / \`.public [num]\``;
+    const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n• \`menu\` / \`help\` - Show this master command layout.\n• \`guidelines\` / \`rules\` - Display match rules.\n• \`slots\` - Query open match layouts.\n• \`tournament\` - Ongoing official tournament info.\n• \`price\` - List entry fees and pricing sheets.\n• \`schedule\` - View daily match timings.\n• \`payout\` - Information on prize distribution.\n\n👑 *Admin Commands* (Use \`.\` prefix):\n• \`.iamadmin\` - Verify authorization tags.\n• \`.activate\` - Turn broadcast loop ON.\n• \`.deactivate\` - Turn broadcast loop OFF.\n• \`.status\` - Get engine health metrics.`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   help: async (sock, msg) => { await commands.menu(sock, msg); },
@@ -71,11 +81,21 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
 
-  // --- 👑 ADMIN REGISTRY ENGINE ---
+  // ──────────────────────────────────────────
+  // 👑 ADMIN INTERACTION & ENGINE PANELS
+  // ──────────────────────────────────────────
   iamadmin: async (sock, msg) => {
     const sender = msg.key.participant || msg.key.remoteJid;
     const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-    await sock.sendMessage(msg.key.remoteJid, { text: `🛡️ *AUTHORIZATION METRICS*\n───────────────────────────\nIdentity Verified! Admin Number \`${cleanNum}\` holds full structural management privileges.` });
+    
+    // Explicit structural identity tagging
+    const structuralTitle = isHeadAdmin(sender) 
+      ? "👑 *HEAD SYSTEM CONTROLLER*" 
+      : "🛡️ *AUTHORIZED ADMIN CLEARANCE*";
+
+    await sock.sendMessage(msg.key.remoteJid, { 
+      text: `${structuralTitle}\n───────────────────────────\nIdentity Verified! Admin Number \`${cleanNum}\` holds full structural management privileges.` 
+    });
   },
 
   activate: async (sock, msg) => {
@@ -121,48 +141,55 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `🔓 User *wa.me/${targetNum}* is now set to PUBLIC.` });
   },
 
+  // ──────────────────────────────────────────
+  // 🤖 AI FALLBACK GATEWAY (OPENAI GPT-4O-MINI)
+  // ──────────────────────────────────────────
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
+    const channelLink = "https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F";
 
-    if (lowerMessage === 'help' || lowerMessage === 'menu') return await commands.menu(sock, msg);
-    if (lowerMessage === 'price' || lowerMessage === 'fee') return await commands.price(sock, msg);
-    if (lowerMessage === 'slots') return await commands.slots(sock, msg);
-    if (lowerMessage === 'rules' || lowerMessage === 'guidelines') return await commands.guidelines(sock, msg);
-    if (lowerMessage === 'schedule' || lowerMessage === 'time') return await commands.schedule(sock, msg);
-    if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
-    if (lowerMessage === 'payout') return await commands.payout(sock, msg);
+    // hardcoded traps for context answers to lower API overhead
+    if (lowerMessage.includes('who are you') || lowerMessage.includes('tum kaun ho')) {
+      return await sock.sendMessage(targetJid, { text: `🏴‍☠️ *LuffyTaro Bot System*\n───────────────────────────\nI am LuffyTaro, the automated assistant built for managing *Pirates Paid Scrims*. Type *menu* to explore match configurations!\n📢 Channel: ${channelLink}` });
+    }
+    if (lowerMessage.includes('who made you') || lowerMessage.includes('kisne banaya')) {
+      return await sock.sendMessage(targetJid, { text: `🏴‍☠️ *System Origin Metric*\n───────────────────────────\nI was created and engineered by the official **Pirates Scrims Developer Network** to automate competitive tournament traffic.\n📢 Update Log: ${channelLink}` });
+    }
 
     try {
-      const channelAlertInfo = `\n\n📢 *Join our Official Channel to Participate:* https://whatsapp.com/channel/200747358617611`;
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `You are LuffyTaro Bot, the dynamic pirate-themed automated support assistant for "Pirates Paid Scrims". 
-        Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.).
-        
-        Information sheet rules:
-        - Rules: Entry is ₹30/match, Daily Pass is ₹80, Season Pass is ₹500.
-        - Maps: Bermuda 6PM, Purgatory 8PM, Kalahari 10PM.
-        - Security: No emulators, no hacks, bans are permanent.
-        
-        If the user is asking about slots, pricing, time schedules, or saying hello/hi, clarify the details concisely. Always sound bold and clear.
-        User prompt text: "${userMessage}"`,
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini', 
+        messages: [
+          { 
+            role: 'system', 
+            content: `You are LuffyTaro Bot, the bold pirate-themed automated support assistant for "Pirates Paid Scrims". 
+            Answer contextually in whatever language or slang the user typed (English, Hindi, Hinglish, Bengali, etc.).
+            
+            Match Context Parameters:
+            - Rules: Entry is ₹30/match, Daily Pass is ₹80, Season Pass is ₹500.
+            - Maps: Bermuda 6PM, Purgatory 8PM, Kalahari 10PM.
+            - Security: No emulators, no hacks, bans are permanent.
+            - Creator: Built by the Pirates Admin Group.`
+          },
+          { role: 'user', content: userMessage }
+        ],
       });
 
-      let replyText = response.text || "";
-      if (!replyText) throw new Error("Empty AI response buffer");
+      let replyText = completion.choices[0]?.message?.content || "";
+      if (!replyText) throw new Error("Empty OpenAI response object layout");
 
-      const introWords = ['hi', 'hello', 'hey', 'join', 'participate', 'start', 'how'];
-      if (introWords.some(word => lowerMessage.includes(word)) && !replyText.includes('200747358617611')) {
-        replyText += channelAlertInfo;
+      const entrySignals = ['hi', 'hello', 'hey', 'join', 'scrim', 'start', 'how to participate'];
+      if (entrySignals.some(word => lowerMessage.includes(word))) {
+        replyText += `\n\n📢 *Join our Official Channel to Participate:* ${channelLink}`;
       }
 
       await sock.sendMessage(targetJid, { text: replyText });
 
     } catch (err) {
-      console.error("AI Fallback Processing Error:", err);
-      await sock.sendMessage(targetJid, { text: `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey there! Drop your question here or type *menu* to see all scrim options. To participate, follow our updates here:\n📢 https://whatsapp.com/channel/200747358617611` });
+      console.error("OpenAI Intercept Error:", err);
+      let defaultRecoveryMessage = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nAhoy! My AI compass got spun around. Type *menu* to see tournament details instantly!\n📢 Official Match Link: ${channelLink}`;
+      await sock.sendMessage(targetJid, { text: defaultRecoveryMessage });
     }
   }
 };
