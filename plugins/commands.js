@@ -9,12 +9,13 @@ const openai = process.env.GROQ_API_KEY ? new OpenAI({
 
 // 👥 MASTER ADMIN AUTHENTICATION MATRIX (Core Numbers + Group Admin Verification Contexts)
 const AUTHORIZED_ADMINS = [
-  "917866052212", // Head Owner
-  "919954865200", // Shift Host 
-  "919158210010", // Backup Shift Host
-  "200747358617611", // Authorized Group Context ID 1
-  "69652038295727",  // Authorized Group Context ID 2
-  "67774785306684"   // Authorized Group Context ID 3
+  "917866052212",      // Head Owner
+  "919954865200",      // Shift Host 
+  "919158210010",      // Backup Shift Host
+  "120363410943628748", // 🔓 YOUR WHATSAPP CHANNEL INTERCEPTOR ID
+  "200747358617611",   // Authorized Group Context ID 1
+  "69652038295727",    // Authorized Group Context ID 2
+  "67774785306684"     // Authorized Group Context ID 3
 ];
 
 export let privateUsers = []; 
@@ -197,14 +198,14 @@ export const commands = {
   },
   authorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
-    if (!id.endsWith('@g.us')) return;
+    if (!id.endsWith('@g.us') && !id.endsWith('@newsletter')) return;
     if (!authorizedGroups.includes(id)) authorizedGroups.push(id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Group (\`${id}\`) successfully authorized.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Context Target (\`${id}\`) successfully authorized.` });
   },
   unauthorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
     authorizedGroups = authorizedGroups.filter(g => g !== id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Group authorization removed.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Authorization removed.` });
   },
   private: async (sock, msg, args) => {
     let targetNum = args[0] ? args[0].replace(/[^0-9]/g, '') : msg.key.remoteJid.split('@')[0];
