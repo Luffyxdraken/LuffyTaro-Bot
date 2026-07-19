@@ -50,24 +50,16 @@ export function buildLobbyMessage() {
 
   const variations = [
     `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™*\n\n> ENTRY - 10/20/30/50/100 RS\n> PP - 18/35/55/90/180 RS\n\n*_DM ${contactLink} FOR SLOTS_* 🔥`,
-    
     `🏴‍☠️ *10x PP LOBBY* 🏴‍☠️\n*PIRATES™* 🇮🇳\n> PAID CS LOBBY 📌\n\n_*2v2 & 3v3 & 4v4 & 1v1 LIMITED AVAILABLE*_\n\n*_DM ${contactLink} FOR SLOTS_* 🔥`,
-    
     `_*☠️ Pirates CS Paid Scrims ☠️*_\n\n\n*1V1/2V2/3V3/4V4  BODY  UNLIMITED*\n\n*SKILL ON*\n\n* *ENTRY- 10/20/30/50/100 RS*\n* *WIN - 18/35/55/90/180 RS*\n\n_*DM :- ${contactLink}*_\n*IDP IN HAND* @all`,
-    
     `🏴‍☠️ *PIRATES™ COMBAT DECK* 🏴‍☠️\n\n> CS FAST SLOTS RUNNING ⚡\n*1v1 2v2 3v3 4v4 MAP SQUADS*\n*ENTRY: 10 to 100 RS | instant prize pools*\n\n_*PING FAST:- ${contactLink}*_ @all`,
-    
     `☠️ *PIRATES™ CASH SCRIMS* ☠️\n\n> 📌 HIGH SKILL CUSTOMS\n* *10 RS ➡️ 18 RS*\n* *30 RS ➡️ 55 RS*\n* *100 RS ➡️ 180 RS*\n\n_*DM FOR INSTANT SLOTS :- ${contactLink}*_ 🔥`,
-    
     `🏴‍☠️ *10x PP SQUAD LOBBY* 🏴‍☠️\n*PIRATES™ OFFICIATING*\n\n> CS BODY & BUILD UNLIMITED 💎\n_*LIMITED GRIDS LEFT IN HAND*_\n\n_*BOOK INBOX NOW :- ${contactLink}*_`,
-    
     `_*☠️ PIRATES™ RUSH HOUR ☠️*_\n\n*2V2 & 4V4 CUSTOM LOBBIES*\n* *ENTRY FEE - 20/50 RS*\n* *WIN PRIZE - 35/90 RS*\n\n_*DM ACTIVE HOST :- ${contactLink}*_ 🚀`,
-    
     `🏴‍☠️ *PIRATES™ ULTIMATE SHOWDOWN* 🏴‍☠️\n\n> 📌 IDP IN HAND @all\n*1V1 TO 4V4 SKILL LOBBIES OPEN*\n*ENTRY - 10/20/30/50/100 RS*\n\n_*DM FOR Roster Tags :- ${contactLink}*_ 🔥`
   ];
 
-  const randomIndex = Math.floor(Math.random() * variations.length);
-  return variations[randomIndex];
+  return variations[Math.floor(Math.random() * variations.length)];
 }
 
 export function getAuthorizedPosterGroups() { return authorizedGroups; }
@@ -102,7 +94,11 @@ export const commands = {
       `• \`.send [number] [msg]\` - Send direct messages across inboxes.`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
-  help: async (sock, msg) => { await commands.menu(sock, msg); },
+  help: async (sock, msg) => { 
+    const currentAdmin = getActiveAdminForTime();
+    const text = `🚨 *PIRATES HELP DESK* 🚨\n───────────────────────────\nNeed assistance with slots, payments, or registration?\n\n💬 *Contact the Active Shift Admin immediately:* wa.me/${currentAdmin}`;
+    await sock.sendMessage(msg.key.remoteJid, { text });
+  },
 
   guidelines: async (sock, msg) => {
     const text = `🏴‍☠️ *PIRATES TOURNAMENT RULES*\n───────────────────────────\n1. Strictly no emulator allowed unless noted.\n2. Hacks, scripts, or teaming up results in an instant permanent ban.\n3. Payout processing takes roughly 10-15 minutes post-match review.`;
@@ -184,11 +180,7 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `⏳ Launching instant test post broadcast across ${authorizedGroups.length} groups...` });
     
     for (const groupId of authorizedGroups) {
-      try {
-        await sock.sendMessage(groupId, { text: lobbyMessage });
-      } catch (err) {
-        console.error(`Failed to test-post to ${groupId}:`, err.message);
-      }
+      try { await sock.sendMessage(groupId, { text: lobbyMessage }); } catch (err) {}
     }
   },
 
@@ -224,7 +216,7 @@ export const commands = {
   },
 
   // ==========================================
-  // 🤖 SMART AI FALLBACK ROUTER
+  // 🤖 SMART ROUTER & AI ARCHITECTURE
   // ==========================================
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
@@ -236,24 +228,32 @@ export const commands = {
     }
     userInteractionCache[targetJid].interactionCount += 1;
 
-    // Fast static text interception for basic identity queries
-    if (lowerMessage.includes('who are you') || lowerMessage.includes('your name') || lowerMessage.includes('what are you')) {
+    // 🛑 1. CRITICAL OVERRIDE: Fast interception for basic queries (Stops fallback loop leaks)
+    if (lowerMessage.includes('who are you') || lowerMessage.includes('your name') || lowerMessage.includes('what are you') || lowerMessage.includes('who made you')) {
       const identityText = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI am the dedicated system bot for *Pirates Paid Scrims*. I manage entry configurations, schedule notifications, and slot lineups automatically inside our matches.`;
       return await sock.sendMessage(targetJid, { text: identityText });
     }
 
-    // Smart Router: If user types slot/price/rules, execute the precise built-in command layout instead of calling AI
+    // 🛑 2. TEXT-BASED COMMAND ROUTING (Works without dots for normal users)
+    if (lowerMessage === 'help' || lowerMessage === 'admin') {
+      return await commands.help(sock, msg);
+    }
     if (lowerMessage.includes('slot')) return await commands.slots(sock, msg);
-    if (lowerMessage.includes('price') || lowerMessage.includes('fee')) return await commands.price(sock, msg);
+    if (lowerMessage.includes('price') || lowerMessage.includes('fee') || lowerMessage.includes('paid scrims')) return await commands.price(sock, msg);
     if (lowerMessage.includes('rule') || lowerMessage.includes('guideline')) return await commands.rules(sock, msg);
     if (lowerMessage.includes('schedule') || lowerMessage.includes('time')) return await commands.schedule(sock, msg);
 
-    // If API Key is missing entirely, skip openai execution gracefully
+    // If the message started with the command prefix, do not process it through OpenAI
+    if (userMessage.startsWith(CONFIG.PREFIX)) return;
+
+    // 🛑 3. API STATUS GUARDRAIL
     if (!openai) {
-      const defaultInfo = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nI didn't quite catch that. Type \`.menu\` to see my active command shortcuts or check slots!`;
+      const currentAdmin = getActiveAdminForTime();
+      const defaultInfo = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nEntries and matching systems are fully automated. Type \`.menu\` to look up open slot balances, or drop a line directly to our shift admin at wa.me/${currentAdmin}`;
       return await sock.sendMessage(targetJid, { text: defaultInfo });
     }
 
+    // 🛑 4. AI LIVE CHANNEL PROCESSING
     try {
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini', 
@@ -271,10 +271,7 @@ export const commands = {
       if (!replyText) throw new Error("Empty OpenAI response.");
 
       const isFirstTime = userInteractionCache[targetJid].interactionCount <= 2;
-      const structuralSignals = ['hi', 'hello', 'hey', 'join', 'scrim', 'start', 'how to participate', 'what is this'];
-      const explicitlyAskingIntro = structuralSignals.some(word => lowerMessage.includes(word));
-
-      if (isFirstTime || explicitlyAskingIntro) {
+      if (isFirstTime || ['hi', 'hello', 'hey', 'join', 'scrim'].some(word => lowerMessage.includes(word))) {
         replyText += `\n\n📢 *Join our Official Channel to Participate:* ${channelLink}`;
       }
 
@@ -282,8 +279,8 @@ export const commands = {
 
     } catch (err) {
       console.error("OpenAI Fallback Error Intercepted:", err.message);
-      // Clean up fallback text to avoid sounding repetitive if error persist
-      const fallbackText = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nHey! Drop a line to our host or type \`.menu\` to look up available matches.`;
+      const currentAdmin = getActiveAdminForTime();
+      const fallbackText = `🏴‍☠️ *Pirates Scrims Support*\n───────────────────────────\nEntries are fully open. Type \`.menu\` to see active structural shortcuts or reach our active host at wa.me/${currentAdmin}`;
       await sock.sendMessage(targetJid, { text: fallbackText });
     }
   }
