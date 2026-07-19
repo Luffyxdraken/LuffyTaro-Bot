@@ -10,7 +10,6 @@ import {
   getActiveAdminForTime, 
   getAuthorizedPosterGroups, 
   verifyAuthority, 
-  hasSystemAccessClearance,
   buildLobbyMessage, 
   isLoopActive
 } from './plugins/commands.js';
@@ -61,22 +60,21 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Broadcast Loop (Active 10:45 AM - 11:45 PM IST)
+  // 🕒 15-Minute Broadcast Loop (Active ONLY between 10:45 AM and 11:45 PM IST)
   setInterval(async () => {
     try {
       if (!isLoopActive()) return;
 
+      // Calculate current Indian Standard Time (IST)
       const now = new Date();
       const istOffset = 5.5 * 60 * 60 * 1000;
       const istDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istOffset);
       const hours = istDate.getHours();
       const minutes = istDate.getMinutes();
-      const currentTimeValue = (hours * 100) + minutes; 
+      const currentTimeValue = (hours * 100) + minutes; // e.g. 10:45 AM = 1045, 11:45 PM = 2345
 
-      // Strict Operating Window: 10:45 AM (1045) to 11:45 PM (2345)
-      if (currentTimeValue < 1045 || currentTimeValue > 2345) {
-        return; 
-      }
+      // Time Filter: Skip broadcasting outside 10:45 AM (1045) to 11:45 PM (2345)
+      if (currentTimeValue < 1045 || currentTimeValue > 2345) return;
 
       const targetGroupIds = getAuthorizedPosterGroups();
       if (targetGroupIds.length === 0) return;
@@ -106,14 +104,13 @@ async function startBot() {
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
       
-      // 🚀 FIXED ALIVE DISPATCHER: Forces clean targeting to your personal phone DM number
       setTimeout(async () => {
         try {
           let targetOwnerJid = CONFIG.OWNER || "917866052212@s.whatsapp.net";
           if (!targetOwnerJid.endsWith('@s.whatsapp.net')) {
             targetOwnerJid = `${targetOwnerJid.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
           }
-          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational! Ready to receive matchmaking traffic in Private DMs.`;
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational!\nBroadcast window: 10:45 AM - 11:45 PM IST.`;
           
           await sock.sendMessage(targetOwnerJid, { text: aliveAlert });
           console.log(`📬 Startup alert cleanly pushed directly to Owner DM: ${targetOwnerJid}`);
@@ -138,7 +135,7 @@ async function startBot() {
     const isChannel = remoteJid.endsWith('@newsletter');
     const isPrivateDm = remoteJid.endsWith('@s.whatsapp.net');
 
-    // 🛡️ REPAIRED EXTRACTOR: Captures nested text arrays from new session tokens perfectly
+    // Robust extractor for nested multi-device text blocks
     const text = msg.message.conversation || 
                  msg.message.extendedTextMessage?.text || 
                  msg.message.imageMessage?.caption || 
@@ -149,46 +146,36 @@ async function startBot() {
                  
     if (!text) return;
 
-    // Prevent loop spam from the bot account, but allow dot commands to run
     if (msg.key.fromMe && !text.startsWith(CONFIG.PREFIX)) return;
 
-    // Universal sender tracing array
     const rawSender = msg.key.participant || msg.participant || remoteJid;
-    
-    // 🛡️ DUAL-LAYER SECURITY VERIFICATION
     const isOwnerOrAdmin = msg.key.fromMe || verifyAuthority(rawSender, msg);
-    const hasClearance = msg.key.fromMe || hasSystemAccessClearance(rawSender, msg);
 
-    // ⚡ Pipeline 1: Dot Command Processors (`.set`, `.slots`, etc.)
+    // ⚡ Pipeline 1: Dot Command Processors
     if (text.startsWith(CONFIG.PREFIX)) {
-      // Security Gate: Block non-authorized tokens from running prefixes inside Groups and Channels
-      if ((isGroup || isChannel) && !hasClearance) return;
+      if ((isGroup || isChannel) && !isOwnerOrAdmin) return;
 
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
       if (commands[commandName]) {
         const adminOnlyCmds = ['authorize', 'unauthorize', 'activate', 'deactivate', 'status', 'testpost', 'set'];
-        
         if (adminOnlyCmds.includes(commandName)) {
-          // 🛑 CHANNEL BYPASS RESTRICTION: The channel has routing clearance, but drops dead here at the admin tool gate
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED*\nYour ID does not hold master admin privileges.` });
+            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED*\nYour ID does not hold admin clearance.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
         }
       } else {
-        // Fallback to menu if command doesn't exist
         try { await commands.menu(sock, msg); } catch (err) { console.error(err); }
       }
       return; 
     }
 
-    // ⚡ Pipeline 2: Conversational AI Engine
-    // 🛑 CRITICAL SAFETY GUARD: Blocks conversational AI completely from Groups and Channels!
+    // ⚡ Pipeline 2: Conversational AI Engine (Direct DMs Only)
     if (!isPrivateDm) return;
 
     try {
