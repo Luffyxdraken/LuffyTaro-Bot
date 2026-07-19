@@ -62,10 +62,9 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Fully Operational)
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
   setInterval(async () => {
     try {
-      // Check if administration has set the global toggle to active
       if (!isLoopActive()) return;
 
       const activeAdmin = getActiveAdminForTime();
@@ -137,12 +136,12 @@ async function startBot() {
     // 🔒 PRIVACY BYPASS ENGINE
     if (privateUsers.includes(cleanSenderNum)) return; 
 
-    // ⚡ Pipeline 1: Command Executions
+    // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
-      let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
 
+      // Owner Override Module
       if (commandName === 'owner') {
         const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
         await sock.sendMessage(msg.key.remoteJid, { 
@@ -151,25 +150,28 @@ async function startBot() {
         return;
       }
 
-      if (commands[targetCmd]) {
+      if (commands[commandName]) {
         const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
         
-        if (adminOnlyCmds.includes(targetCmd)) {
+        if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
-            try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+            try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
             await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
           }
         } else {
-          try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+          try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
         }
-        return; 
+      } else {
+        // Unknown command entered; send to menu to show user valid selections
+        try { await commands.menu(sock, msg); } catch (err) { console.error(err); }
       }
+      return; // 🛑 CRITICAL: Stops commands from slipping into the AI Fallback channel below!
     }
 
+    // ⚡ Pipeline 2: Conversational Engine (Only active inside Private Messages)
     if (isGroup) return;
 
-    // 🤖 Pure AI Fallback Router
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
