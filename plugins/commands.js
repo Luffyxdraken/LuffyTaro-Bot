@@ -71,14 +71,16 @@ export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 
 export function verifyAuthority(sender) { 
   if (!sender) return false;
+  // This extracts just the clean phone number (e.g., "917866052212")
   const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  return AUTHORIZED_ADMINS.some(adminNum => cleanNum.includes(adminNum) || adminNum.includes(cleanNum));
+  // Using === ensures it checks for the EXACT number match only
+  return AUTHORIZED_ADMINS.some(adminNum => cleanNum === adminNum);
 }
 
 export function isHeadAdmin(sender) {
   if (!sender) return false;
   const cleanNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-  return cleanNum.includes(AUTHORIZED_ADMINS[0]) || AUTHORIZED_ADMINS[0].includes(cleanNum);
+  return cleanNum === AUTHORIZED_ADMINS[0];
 }
 
 // ==========================================
