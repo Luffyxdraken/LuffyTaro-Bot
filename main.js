@@ -5,10 +5,12 @@ import fs from 'fs';
 import path from 'path';
 import http from 'http';
 import { CONFIG } from './config.js'; 
-import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage, privateUsers, toggleBroadcastLoop, isLoopActive } from './plugins/commands.js';
+import { commands, getActiveAdminForTime, getAuthorizedPosterGroups, verifyAuthority, buildLobbyMessage, privateUsers } from './plugins/commands.js';
 import { handleGroupParticipants } from './plugins/automation.js';
-import { getConfig } from './sql/database.js';
 
+// ==========================================
+// 1. RENDER PORT HEALTH CHECK HTTP ENGINE
+// ==========================================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -17,6 +19,9 @@ http.createServer((req, res) => {
   console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
 });
 
+// ==========================================
+// 2. CRYPTO DATA SESSION INITIALIZER
+// ==========================================
 async function initSession() {
   if (CONFIG.SESSION_ID) {
     if (!fs.existsSync(CONFIG.SESSION_DIR)) fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
@@ -30,6 +35,9 @@ async function initSession() {
   }
 }
 
+// ==========================================
+// 3. MAIN CORE ENGINE CORE FLOW
+// ==========================================
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   let version = [2, 3000, 1017577546];
@@ -46,11 +54,9 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 15-Minute Dynamic Broadcast Loop (Now toggled securely via commands!)
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop (Maintained Safely)
   setInterval(async () => {
     try {
-      if (!isLoopActive()) return; // Controlled via admin .activate / .deactivate commands
-      
       const activeAdmin = getActiveAdminForTime();
       if (!activeAdmin) return; 
       const targetGroupIds = getAuthorizedPosterGroups();
@@ -66,6 +72,7 @@ async function startBot() {
     } catch (err) {}
   }, 15 * 60 * 1000);
 
+  // Connection State Handling
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
@@ -95,6 +102,9 @@ async function startBot() {
     try { await handleGroupParticipants(sock, update); } catch (e) {}
   });
 
+  // ==========================================
+  // 4. CHAT SYSTEM FLOW ROUTER
+  // ==========================================
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -108,31 +118,42 @@ async function startBot() {
     const isOwnerOrAdmin = verifyAuthority(sender);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
+    // 🔒 PRIVACY BYPASS ENGINE
     if (privateUsers.includes(cleanSenderNum)) return; 
 
-    // ⚡ Pipeline 1: Command Prefix Execution Block (Strict Admin Management Tools)
+    // ⚡ Pipeline 1: Command Executions
     if (text.startsWith(CONFIG.PREFIX)) {
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
+      let targetCmd = commandName === 'help' || commandName === 'menu' ? 'menu' : commandName;
 
-      if (commands[commandName]) {
-        // Restrict structural back-end controls exclusively to system admins
-        const privilegedActions = ['authorize', 'unauthorize', 'private', 'public', 'iamadmin', 'activate', 'deactivate', 'status'];
-        if (privilegedActions.includes(commandName) && !isOwnerOrAdmin) {
-          await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
-          return;
-        }
+      if (commandName === 'owner') {
+        const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+        await sock.sendMessage(msg.key.remoteJid, { 
+          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
+        });
+        return;
+      }
 
-        try { 
-          await commands[commandName](sock, msg, args, text); 
-          return;
-        } catch (err) { 
-          console.error(err); 
+      if (commands[targetCmd]) {
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public'];
+        
+        if (adminOnlyCmds.includes(targetCmd)) {
+          if (isOwnerOrAdmin) {
+            try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
+          } else {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+          }
+        } else {
+          try { await commands[targetCmd](sock, msg, args, text); } catch (err) { console.error(err); }
         }
+        return; 
       }
     }
 
-    // 🧠 Pipeline 2: Natural Language & Broad Support Fallback (No dots required)
+    if (isGroup) return;
+
+    // 🤖 Pure AI Fallback Router (Fires cleanly only if no dot commands match)
     try {
       await commands.handleAiFallback(sock, msg, text);
     } catch (e) {
