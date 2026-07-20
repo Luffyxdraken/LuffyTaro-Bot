@@ -15,7 +15,7 @@ const AUTHORIZED_ADMINS = [
 
 export let privateUsers = []; 
 
-// 📢 PERMANENT AUTHORIZED BROADCAST TARGETS (Hardcoded to survive server restarts)
+// 📢 PERMANENT AUTHORIZED BROADCAST TARGETS (Groups & Channels)
 let authorizedGroups = [
   "200747358617611@g.us", // Authorized Group Context ID 1
   "69652038295727@g.us",  // Authorized Group Context ID 2
@@ -117,7 +117,7 @@ export const commands = {
     if (!cleanContent) return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Text body cannot be blank.` });
 
     LIVE_SCRIM_DATABASE[targetProperty] = cleanContent;
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Database Updated!*\nProperty *${targetProperty}* has been reconfigured successfully.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Database Updated!*\nProperty *${targetProperty}* has been reconfigured successfully. AI knowledge updated.` });
   },
 
   send: async (sock, msg, args) => {
@@ -142,26 +142,29 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ *BROADCAST LOOP HALTED*` });
   },
   status: async (sock, msg) => {
-    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• *Broadcaster Loop:* ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• *Current Active Shift Admin:* wa.me/${getActiveAdminForTime()}\n• *Authorized Targets:* ${authorizedGroups.length} Active Groups`;
+    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• *Broadcaster Loop:* ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• *Current Active Shift Admin:* wa.me/${getActiveAdminForTime()}\n• *Authorized Targets:* ${authorizedGroups.length} Active Targets (Groups & Channels)`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   testpost: async (sock, msg) => {
     if (authorizedGroups.length === 0) return;
     const lobbyMessage = buildLobbyMessage();
-    for (const groupId of authorizedGroups) {
-      try { await sock.sendMessage(groupId, { text: lobbyMessage }); } catch (err) {}
+    for (const targetId of authorizedGroups) {
+      try { await sock.sendMessage(targetId, { text: lobbyMessage }); } catch (err) {}
     }
   },
   authorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
-    if (!id.endsWith('@g.us') && !id.endsWith('@newsletter')) return;
+    // Allows both WhatsApp Groups (@g.us) and Channels (@newsletter)
+    if (!id.endsWith('@g.us') && !id.endsWith('@newsletter')) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Invalid JID! Target must end with @g.us (Group) or @newsletter (Channel).` });
+    }
     if (!authorizedGroups.includes(id)) authorizedGroups.push(id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Context Target (\`${id}\`) successfully authorized.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Target (\`${id}\`) successfully authorized for broadcasts.` });
   },
   unauthorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
     authorizedGroups = authorizedGroups.filter(g => g !== id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Authorization removed.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Authorization removed for \`${id}\`.` });
   },
 
   handleAiFallback: async (sock, msg, userMessage) => {
@@ -188,19 +191,42 @@ export const commands = {
 
     if (openai) {
       try {
+        // Construct real-time dynamic context from LIVE_SCRIM_DATABASE
+        const dynamicContext = `
+Current Pirates Scrim Details:
+- Slots Info: ${LIVE_SCRIM_DATABASE.slots}
+- Tournament Info: ${LIVE_SCRIM_DATABASE.tournament}
+- Pricing Info: ${LIVE_SCRIM_DATABASE.price}
+- Timetable/Schedule: ${LIVE_SCRIM_DATABASE.schedule}
+- Payouts: ${LIVE_SCRIM_DATABASE.payout}
+        `.trim();
+
         const completion = await openai.chat.completions.create({
           model: 'llama-3.1-8b-instant', 
           messages: [
             { 
               role: 'system', 
-              content: `You are LuffyTaro Bot, the bold pirate assistant for "Pirates Paid Scrims". Respond shortly under 3 lines. If user asks general out of topic questions, decline saying: "I am not allowed to discuss matters outside the Pirates Scrim Deck!"` 
+              content: `You are LuffyTaro Bot, the energetic assistant for "Pirates Paid Scrims". Respond concisely in under 3 lines.
+
+Use the following real-time database details to accurately answer scrim questions:
+${dynamicContext}
+
+Active Admin for manual support: wa.me/${getActiveAdminForTime()}
+
+If a question is off-topic, decline politely with: "I am not allowed to discuss matters outside the Pirates Scrim Deck!"` 
             },
             { role: 'user', content: userMessage }
           ],
         });
         let replyText = completion.choices[0]?.message?.content || "";
         if (replyText) return await sock.sendMessage(targetJid, { text: replyText });
-      } catch (err) {}
+      } catch (err) {
+        console.error("❌ Groq AI Error:", err.message);
+      }
     }
+
+    // Fallback if GROQ_API_KEY is not set or API request fails
+    const fallbackMessage = `🏴‍☠️ *Pirates Support Bot*\n\nSend \`.menu\` to see available options or contact the host: wa.me/${getActiveAdminForTime()}`;
+    await sock.sendMessage(targetJid, { text: fallbackMessage });
   }
 };
