@@ -128,14 +128,17 @@ async function startBot() {
   // ==========================================
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message) return;
+    if (!msg || !msg.message) return;
+
+    // 🛑 STOPS INFINITE LOOPS: Ignore messages sent by the bot itself!
+    if (msg.key.fromMe) return;
 
     const remoteJid = msg.key.remoteJid;
     const isGroup = remoteJid.endsWith('@g.us');
     const isChannel = remoteJid.endsWith('@newsletter');
     const isPrivateDm = remoteJid.endsWith('@s.whatsapp.net');
 
-    // Extract message content safely across formats
+    // Safe extraction for text messages across different formats
     const text = msg.message.conversation || 
                  msg.message.extendedTextMessage?.text || 
                  msg.message.imageMessage?.caption || 
@@ -147,9 +150,9 @@ async function startBot() {
     if (!text) return;
 
     const rawSender = msg.key.participant || msg.participant || remoteJid;
-    const isOwnerOrAdmin = msg.key.fromMe || verifyAuthority(rawSender, msg);
+    const isOwnerOrAdmin = verifyAuthority(rawSender, msg);
 
-    // ⚡ Pipeline 1: Dot Command Processors
+    // ⚡ Pipeline 1: Dot Commands Processor
     if (text.startsWith(CONFIG.PREFIX)) {
       if ((isGroup || isChannel) && !isOwnerOrAdmin) return;
 
@@ -173,7 +176,7 @@ async function startBot() {
       return; 
     }
 
-    // ⚡ Pipeline 2: Conversational AI & Keyword Handler (Direct DMs Only)
+    // ⚡ Pipeline 2: Conversational AI & Direct Keyword Handler (Private DMs Only)
     if (isPrivateDm) {
       try {
         await commands.handleAiFallback(sock, msg, text);
