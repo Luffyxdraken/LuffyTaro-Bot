@@ -80,12 +80,12 @@ async function startBot() {
       if (targetGroupIds.length === 0) return;
 
       const lobbyMessage = buildLobbyMessage();
-      for (const groupId of targetGroupIds) {
+      for (const targetId of targetGroupIds) {
         try {
-          await sock.sendMessage(groupId, { text: lobbyMessage });
+          await sock.sendMessage(targetId, { text: lobbyMessage });
           await new Promise(r => setTimeout(r, 2000));
         } catch (e) {
-          console.error(`Broadcast distribution error: ${groupId}`, e.message);
+          console.error(`Broadcast distribution error: ${targetId}`, e.message);
         }
       }
     } catch (err) {}
@@ -135,7 +135,7 @@ async function startBot() {
     const isChannel = remoteJid.endsWith('@newsletter');
     const isPrivateDm = remoteJid.endsWith('@s.whatsapp.net');
 
-    // Robust extractor for nested multi-device text blocks
+    // Extract message content safely across formats
     const text = msg.message.conversation || 
                  msg.message.extendedTextMessage?.text || 
                  msg.message.imageMessage?.caption || 
@@ -145,8 +145,6 @@ async function startBot() {
                  '';
                  
     if (!text) return;
-
-    if (msg.key.fromMe && !text.startsWith(CONFIG.PREFIX)) return;
 
     const rawSender = msg.key.participant || msg.participant || remoteJid;
     const isOwnerOrAdmin = msg.key.fromMe || verifyAuthority(rawSender, msg);
@@ -175,13 +173,13 @@ async function startBot() {
       return; 
     }
 
-    // ⚡ Pipeline 2: Conversational AI Engine (Direct DMs Only)
-    if (!isPrivateDm) return;
-
-    try {
-      await commands.handleAiFallback(sock, msg, text);
-    } catch (e) {
-      console.error("Interaction flow fallback exception:", e);
+    // ⚡ Pipeline 2: Conversational AI & Keyword Handler (Direct DMs Only)
+    if (isPrivateDm) {
+      try {
+        await commands.handleAiFallback(sock, msg, text);
+      } catch (e) {
+        console.error("Interaction flow fallback exception:", e);
+      }
     }
   });
 }
