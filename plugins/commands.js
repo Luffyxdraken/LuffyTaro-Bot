@@ -117,7 +117,7 @@ export const commands = {
     if (!cleanContent) return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Text body cannot be blank.` });
 
     LIVE_SCRIM_DATABASE[targetProperty] = cleanContent;
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Database Updated!*\nProperty *${targetProperty}* has been reconfigured successfully. AI knowledge updated.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Database Updated!*\nProperty *${targetProperty}* has been reconfigured successfully.` });
   },
 
   send: async (sock, msg, args) => {
@@ -142,7 +142,7 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ *BROADCAST LOOP HALTED*` });
   },
   status: async (sock, msg) => {
-    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• *Broadcaster Loop:* ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• *Current Active Shift Admin:* wa.me/${getActiveAdminForTime()}\n• *Authorized Targets:* ${authorizedGroups.length} Active Targets (Groups & Channels)`;
+    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• *Broadcaster Loop:* ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• *Current Active Shift Admin:* wa.me/${getActiveAdminForTime()}\n• *Authorized Targets:* ${authorizedGroups.length} Active Targets`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   testpost: async (sock, msg) => {
@@ -154,12 +154,11 @@ export const commands = {
   },
   authorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
-    // Allows both WhatsApp Groups (@g.us) and Channels (@newsletter)
     if (!id.endsWith('@g.us') && !id.endsWith('@newsletter')) {
-      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Invalid JID! Target must end with @g.us (Group) or @newsletter (Channel).` });
+      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Invalid JID! Must end with @g.us or @newsletter.` });
     }
     if (!authorizedGroups.includes(id)) authorizedGroups.push(id);
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Target (\`${id}\`) successfully authorized for broadcasts.` });
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ Target (\`${id}\`) successfully authorized.` });
   },
   unauthorize: async (sock, msg, args) => {
     const id = args[0] || msg.key.remoteJid;
@@ -167,31 +166,27 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `❌ Authorization removed for \`${id}\`.` });
   },
 
+  // 🤖 AI FALLBACK & NATURAL CONVERSATION ROUTER
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
 
-    if (!userInteractionCache[targetJid]) {
-      userInteractionCache[targetJid] = { interactionCount: 0 };
-    }
-    userInteractionCache[targetJid].interactionCount += 1;
-
+    // 1. Direct Keyword Trigger Matching (Works without dot)
     if (lowerMessage.includes('who are you') || lowerMessage.includes('your name')) {
       return await sock.sendMessage(targetJid, { text: `🏴‍☠️ *LuffyTaro Automated Assistant*\nI am the system bot for *Pirates Paid Scrims*.` });
     }
-
-    if (lowerMessage === 'help' || lowerMessage === 'admin' || lowerMessage === 'hi' || lowerMessage === 'hello') return await commands.help(sock, msg);
+    if (lowerMessage === 'help' || lowerMessage === 'admin' || lowerMessage === 'hi' || lowerMessage === 'hello') {
+      return await commands.help(sock, msg);
+    }
     if (lowerMessage === 'slot' || lowerMessage === 'slots') return await commands.slots(sock, msg);
     if (lowerMessage === 'tournament') return await commands.tournament(sock, msg);
-    if (lowerMessage === 'price' || lowerMessage === 'fee') return await commands.price(sock, msg);
-    if (lowerMessage === 'schedule' || lowerMessage === 'time') return await commands.schedule(sock, msg);
-    if (lowerMessage === 'payout' || lowerMessage === 'win') return await commands.payout(sock, msg);
+    if (lowerMessage === 'price' || lowerMessage === 'fee' || lowerMessage === 'entry') return await commands.price(sock, msg);
+    if (lowerMessage === 'schedule' || lowerMessage === 'time' || lowerMessage === 'timing') return await commands.schedule(sock, msg);
+    if (lowerMessage === 'payout' || lowerMessage === 'win' || lowerMessage === 'winning') return await commands.payout(sock, msg);
 
-    if (userMessage.startsWith(CONFIG.PREFIX)) return;
-
+    // 2. Groq AI Engine Integration
     if (openai) {
       try {
-        // Construct real-time dynamic context from LIVE_SCRIM_DATABASE
         const dynamicContext = `
 Current Pirates Scrim Details:
 - Slots Info: ${LIVE_SCRIM_DATABASE.slots}
@@ -206,27 +201,23 @@ Current Pirates Scrim Details:
           messages: [
             { 
               role: 'system', 
-              content: `You are LuffyTaro Bot, the energetic assistant for "Pirates Paid Scrims". Respond concisely in under 3 lines.
-
-Use the following real-time database details to accurately answer scrim questions:
-${dynamicContext}
-
-Active Admin for manual support: wa.me/${getActiveAdminForTime()}
-
-If a question is off-topic, decline politely with: "I am not allowed to discuss matters outside the Pirates Scrim Deck!"` 
+              content: `You are LuffyTaro Bot, the energetic assistant for "Pirates Paid Scrims". Answer concisely in 2-3 lines max using this context:\n${dynamicContext}\nActive Admin contact: wa.me/${getActiveAdminForTime()}` 
             },
             { role: 'user', content: userMessage }
           ],
         });
+        
         let replyText = completion.choices[0]?.message?.content || "";
-        if (replyText) return await sock.sendMessage(targetJid, { text: replyText });
+        if (replyText) {
+          return await sock.sendMessage(targetJid, { text: replyText });
+        }
       } catch (err) {
-        console.error("❌ Groq AI Error:", err.message);
+        console.error("❌ Groq AI API Error:", err.message);
       }
     }
 
-    // Fallback if GROQ_API_KEY is not set or API request fails
-    const fallbackMessage = `🏴‍☠️ *Pirates Support Bot*\n\nSend \`.menu\` to see available options or contact the host: wa.me/${getActiveAdminForTime()}`;
+    // 3. Guaranteed Fallback Reply (Runs when GROQ_API_KEY is not set or fails)
+    const fallbackMessage = `🏴‍☠️ *Pirates Support Bot*\n\nSend \`.menu\` to see all options or talk to our host directly: wa.me/${getActiveAdminForTime()}`;
     await sock.sendMessage(targetJid, { text: fallbackMessage });
   }
 };
