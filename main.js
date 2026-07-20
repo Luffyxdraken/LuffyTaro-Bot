@@ -11,18 +11,20 @@ import {
   getAuthorizedPosterGroups, 
   verifyAuthority, 
   buildLobbyMessage, 
+  privateUsers,
   isLoopActive
 } from './plugins/commands.js';
+import { handleGroupParticipants } from './plugins/automation.js';
 
 // ==========================================
-// 1. HEALTH CHECK HTTP ENGINE (Render Keep-Alive)
+// 1. RENDER PORT HEALTH CHECK HTTP ENGINE
 // ==========================================
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('LuffyTaro Bot System Online');
 }).listen(PORT, () => {
-  console.log(`📡 Healthcheck mapping active on port ${PORT}`);
+  console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
 });
 
 // ==========================================
@@ -42,10 +44,21 @@ async function initSession() {
 }
 
 // ==========================================
-// 3. MAIN CORE ENGINE FLOW
+// 3. MAIN CORE ENGINE CORE FLOW
 // ==========================================
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  let authState;
+  try {
+    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  } catch (err) {
+    console.error('⚠️ Session data corruption found! Wiping old state folder for security...');
+    if (fs.existsSync(CONFIG.SESSION_DIR)) {
+      fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+    }
+    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  }
+
+  const { state, saveCreds } = authState;
   let version = [2, 3000, 1017577546];
   try {
     const latest = await fetchLatestWaWebVersion();
@@ -60,112 +73,119 @@ async function startBot() {
     browser: ['LuffyTaro Engine', 'Mac', '1.0.0']
   });
 
-  // 🕒 15-Minute Broadcast Loop (Active ONLY between 10:45 AM and 11:45 PM IST)
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
   setInterval(async () => {
     try {
       if (!isLoopActive()) return;
 
-      // Calculate current Indian Standard Time (IST)
-      const now = new Date();
-      const istOffset = 5.5 * 60 * 60 * 1000;
-      const istDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + istOffset);
-      const hours = istDate.getHours();
-      const minutes = istDate.getMinutes();
-      const currentTimeValue = (hours * 100) + minutes; // e.g. 10:45 AM = 1045, 11:45 PM = 2345
-
-      // Time Filter: Skip broadcasting outside 10:45 AM (1045) to 11:45 PM (2345)
-      if (currentTimeValue < 1045 || currentTimeValue > 2345) return;
+      const activeAdmin = getActiveAdminForTime();
+      if (!activeAdmin) return; 
 
       const targetGroupIds = getAuthorizedPosterGroups();
       if (targetGroupIds.length === 0) return;
 
       const lobbyMessage = buildLobbyMessage();
-      for (const targetId of targetGroupIds) {
+      for (const groupId of targetGroupIds) {
         try {
-          await sock.sendMessage(targetId, { text: lobbyMessage });
+          await sock.sendMessage(groupId, { text: lobbyMessage });
           await new Promise(r => setTimeout(r, 2000));
         } catch (e) {
-          console.error(`Broadcast distribution error: ${targetId}`, e.message);
+          console.error(`Loop error dispatching to target group ${groupId}:`, e.message);
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error("Global broadcasting engine processing exception:", err);
+    }
   }, 15 * 60 * 1000);
 
-  // Connection Management Flow
+  // Connection State Handling
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
     if (qr && !CONFIG.SESSION_ID) QRCode.generate(qr, { small: true });
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      if (statusCode !== DisconnectReason.loggedOut) setTimeout(() => startBot(), 5000);
+      
+      if (lastDisconnect?.error?.message?.includes('Unsupported state')) {
+        console.log('🚨 Crypto state error isolated. Cleaning local state files and recycling session...');
+        if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+        setTimeout(() => startBot(), 2000);
+      } else if (statusCode !== DisconnectReason.loggedOut) {
+        setTimeout(() => startBot(), 5000);
+      }
     }
     
     if (connection === 'open') {
       console.log('✅ LuffyTaro Engine Connected Successfully!');
-      
-      setTimeout(async () => {
+      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
+      if (rawOwner) {
+        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
+        const ownerJid = `${rawOwner}@s.whatsapp.net`;
         try {
-          let targetOwnerJid = CONFIG.OWNER || "917866052212@s.whatsapp.net";
-          if (!targetOwnerJid.endsWith('@s.whatsapp.net')) {
-            targetOwnerJid = `${targetOwnerJid.replace(/[^0-9]/g, '')}@s.whatsapp.net`;
-          }
-          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational!\nBroadcast window: 10:45 AM - 11:45 PM IST.`;
-          
-          await sock.sendMessage(targetOwnerJid, { text: aliveAlert });
-          console.log(`📬 Startup alert cleanly pushed directly to Owner DM: ${targetOwnerJid}`);
-        } catch (err) {
-          console.error("Failed to send alive alert to owner inbox:", err.message);
-        }
-      }, 5000); 
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
+          await sock.sendMessage(ownerJid, { text: aliveAlert });
+        } catch (err) {}
+      }
     }
   });
 
   sock.ev.on('creds.update', saveCreds);
   
+  sock.ev.on('group-participants.update', async (update) => {
+    try { await handleGroupParticipants(sock, update); } catch (e) {}
+  });
+
   // ==========================================
-  // 4. GLOBAL CHAT ROUTER PIPELINE
+  // 4. CHAT SYSTEM FLOW ROUTER
   // ==========================================
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
-    if (!msg || !msg.message) return;
 
-    // 🛑 STOPS INFINITE LOOPS: Ignore messages sent by the bot itself!
-    if (msg.key.fromMe) return;
+    // Ignores bot's own sent messages to prevent infinite self-reply loops
+    if (!msg || !msg.message || msg.key.fromMe) return;
 
     const remoteJid = msg.key.remoteJid;
+    const sender = msg.key.participant || remoteJid;
     const isGroup = remoteJid.endsWith('@g.us');
     const isChannel = remoteJid.endsWith('@newsletter');
-    const isPrivateDm = remoteJid.endsWith('@s.whatsapp.net');
 
-    // Safe extraction for text messages across different formats
+    // Extract text safely across formats
     const text = msg.message.conversation || 
                  msg.message.extendedTextMessage?.text || 
                  msg.message.imageMessage?.caption || 
                  msg.message.videoMessage?.caption ||
-                 msg.message.viewOnceMessageV2?.message?.imageMessage?.caption ||
-                 msg.message.viewOnceMessageV2?.message?.extendedTextMessage?.text ||
                  '';
-                 
+
     if (!text) return;
+    
+    const isOwnerOrAdmin = verifyAuthority(sender, msg);
+    const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
-    const rawSender = msg.key.participant || msg.participant || remoteJid;
-    const isOwnerOrAdmin = verifyAuthority(rawSender, msg);
+    // PRIVACY BYPASS ENGINE
+    if (privateUsers.includes(cleanSenderNum)) return; 
 
-    // ⚡ Pipeline 1: Dot Commands Processor
+    // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
     if (text.startsWith(CONFIG.PREFIX)) {
-      if ((isGroup || isChannel) && !isOwnerOrAdmin) return;
-
       const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
       const commandName = args.shift().toLowerCase();
 
+      // Owner Override Module
+      if (commandName === 'owner') {
+        const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+        await sock.sendMessage(remoteJid, { 
+          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
+        });
+        return;
+      }
+
       if (commands[commandName]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'activate', 'deactivate', 'status', 'testpost', 'set'];
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost', 'set', 'setadmin'];
+        
         if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED*\nYour ID does not hold admin clearance.` });
+            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
@@ -176,13 +196,13 @@ async function startBot() {
       return; 
     }
 
-    // ⚡ Pipeline 2: Conversational AI & Direct Keyword Handler (Private DMs Only)
-    if (isPrivateDm) {
-      try {
-        await commands.handleAiFallback(sock, msg, text);
-      } catch (e) {
-        console.error("Interaction flow fallback exception:", e);
-      }
+    // ⚡ Pipeline 2: Conversational Engine & Groq AI (Only active in Direct DM chats)
+    if (isGroup || isChannel) return;
+
+    try {
+      await commands.handleAiFallback(sock, msg, text);
+    } catch (e) {
+      console.error("AI execution fallback channel error:", e);
     }
   });
 }
