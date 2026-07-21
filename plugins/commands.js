@@ -50,6 +50,11 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const currentTimeValue = (hours * 100) + minutes; 
 
+  // 🛑 OFF-HOURS GUARDIAN: Skip posting between 12:00 AM Midnight and 10:29 AM IST
+  if (currentTimeValue < 1030) {
+    return null; // Prevents broadcast execution outside active operating hours
+  }
+
   // 🕒 10:30 AM to 3:00 PM IST (1030 to 1500)
   if (currentTimeValue >= 1030 && currentTimeValue < 1500) {
     return SHIFT_ADMINS.day;
@@ -63,12 +68,14 @@ export function getActiveAdminForTime() {
     return SHIFT_ADMINS.night;
   }
 
-  return SHIFT_ADMINS.day; // Default Fallback
+  return null; // Fallback safety
 }
 
 // BROADCAST VARIANT ROTATOR
 export function buildLobbyMessage() {
   const currentAdmin = getActiveAdminForTime();
+  if (!currentAdmin) return null;
+
   const contactLink = `wa.me/${currentAdmin}`;
 
   const variations = [
@@ -127,8 +134,9 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   help: async (sock, msg) => { 
+    const currentHost = getActiveAdminForTime();
     const text = `🚨 *PIRATES DIRECT HELP CLEARANCE* 🚨\n───────────────────────────\n` +
-      `📩 *Current Active Shift Host:* wa.me/${getActiveAdminForTime()}\n` +
+      `📩 *Current Active Shift Host:* ${currentHost ? `wa.me/${currentHost}` : 'Off-hours (Opens at 10:30 AM IST)'}\n` +
       `👑 *Head Management:* wa.me/${SHIFT_ADMINS.day}\n\n` +
       `Drop your team tags or receipt confirmations directly to the active links above.`;
     await sock.sendMessage(msg.key.remoteJid, { text });
@@ -229,12 +237,16 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ *BROADCAST LOOP HALTED*` });
   },
   status: async (sock, msg) => {
-    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• *Broadcaster Loop:* ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• *Current Active Shift Admin:* wa.me/${getActiveAdminForTime()}\n• *Authorized Targets:* ${authorizedGroups.length} Active Groups`;
+    const currentHost = getActiveAdminForTime();
+    const text = `📊 *SYSTEM STATUS REPORT*\n───────────────────────────\n• *Broadcaster Loop:* ${loopRunningStatus ? '🟢 ACTIVE' : '🔴 PAUSED'}\n• *Current Active Shift Admin:* ${currentHost ? `wa.me/${currentHost}` : 'Off-hours (Inactive)'}\n• *Authorized Targets:* ${authorizedGroups.length} Active Groups`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
   testpost: async (sock, msg) => {
     if (authorizedGroups.length === 0) return;
     const lobbyMessage = buildLobbyMessage();
+    if (!lobbyMessage) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ Cannot generate test post outside active broadcast hours (10:30 AM - 12:00 AM IST).` });
+    }
     for (const groupId of authorizedGroups) {
       try { await sock.sendMessage(groupId, { text: lobbyMessage }); } catch (err) {}
     }
