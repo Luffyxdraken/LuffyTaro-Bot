@@ -3,7 +3,6 @@ import path from 'path';
 import { CONFIG } from '../config.js'; 
 import OpenAI from 'openai';
 
-// Safe instantiation using Groq's high-speed compatibility layer
 const openai = process.env.GROQ_API_KEY ? new OpenAI({ 
   apiKey: process.env.GROQ_API_KEY,
   baseURL: process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1"
@@ -46,7 +45,6 @@ const DEFAULT_DATABASE = {
   payout: `💸 *PRIZE DISTRIBUTION SYSTEM*\n───────────────────────────\n• Winner Take All structures clear inside 15 minutes.\n• Payments processed through UPI, GPay, and PhonePe.\n• Screenshots of placements must be dropped in the main group right as you finish.`
 };
 
-// Load database from file system if exists
 let LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE };
 if (fs.existsSync(DB_PATH)) {
   try {
@@ -57,7 +55,6 @@ if (fs.existsSync(DB_PATH)) {
   }
 }
 
-// Function to save updates directly to disk
 function saveDatabase() {
   try {
     fs.writeFileSync(DB_PATH, JSON.stringify(LIVE_SCRIM_DATABASE, null, 2));
@@ -66,7 +63,6 @@ function saveDatabase() {
   }
 }
 
-// SHIFT MATRIX TIMETABLE (IST)
 export function getActiveAdminForTime() {
   const now = new Date();
   const istOffset = 5.5 * 60 * 60 * 1000;
@@ -76,7 +72,7 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const currentTimeValue = (hours * 100) + minutes; 
 
-  if (currentTimeValue < 1030) return null; // Off-hours safety check
+  if (currentTimeValue < 1030) return null;
 
   if (currentTimeValue >= 1030 && currentTimeValue < 1500) return SHIFT_ADMINS.day;
   else if (currentTimeValue >= 1500 && currentTimeValue < 2100) return SHIFT_ADMINS.eve;
@@ -85,7 +81,6 @@ export function getActiveAdminForTime() {
   return null;
 }
 
-// BROADCAST VARIANT ROTATOR
 export function buildLobbyMessage() {
   const currentAdmin = getActiveAdminForTime();
   if (!currentAdmin) return null;
@@ -136,6 +131,8 @@ export const commands = {
   menu: async (sock, msg) => {
     const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n` +
       `• \`.menu\` / \`.help\` - Show this master command layout.\n` +
+      `• \`.welcome [on/off]\` - Toggle welcome messages.\n` +
+      `• \`.goodbye [on/off]\` - Toggle goodbye messages.\n` +
       `• \`.slots\` - Query open matches and available slot layouts.\n` +
       `• \`.tournament\` - Details regarding ongoing official tournaments.\n` +
       `• \`.price\` - List entry fees and pricing sheets.\n` +
@@ -294,7 +291,6 @@ export const commands = {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
     const channelLink = "https://whatsapp.com/channel/0029VbDEkTw9hXF0CaO0960F";
-    const isSenderAdmin = verifyAuthority(msg.key.remoteJid, msg);
 
     if (!userInteractionCache[targetJid]) {
       userInteractionCache[targetJid] = { interactionCount: 0 };
@@ -313,14 +309,6 @@ export const commands = {
     if (lowerMessage === 'rule' || lowerMessage === 'rules' || lowerMessage === 'guideline' || lowerMessage === 'guidelines') return await commands.rules(sock, msg);
     if (lowerMessage === 'schedule' || lowerMessage === 'time' || lowerMessage === 'timetable') return await commands.schedule(sock, msg);
     if (lowerMessage === 'payout' || lowerMessage === 'win' || lowerMessage === 'prize') return await commands.payout(sock, msg);
-
-    if (lowerMessage.startsWith('set ')) {
-      if (!isSenderAdmin) return await sock.sendMessage(targetJid, { text: `❌ *ACCESS DENIED*` });
-      const args = userMessage.slice(4).trim().split(/ +/);
-      return await commands.set(sock, msg, args);
-    }
-
-    if (userMessage.startsWith(CONFIG.PREFIX)) return;
 
     if (openai) {
       try {
@@ -346,9 +334,8 @@ export const commands = {
       } catch (err) {}
     }
 
-    const fallbackVariations = [
-      `🏴‍☠️ *Pirates Automated Scrim Support*\n───────────────────────────\nType *help* to contact our direct shift host links right away.\n\n📢 *Official Channel:* ${channelLink}`
-    ];
-    await sock.sendMessage(targetJid, { text: fallbackVariations[0] });
+    // Silent fallback — no automatic menu message on unknown DM messages
+    return;
   }
 };
+                                       
