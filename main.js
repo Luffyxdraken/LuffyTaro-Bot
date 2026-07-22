@@ -28,12 +28,25 @@ import {
 
 import { CONFIG } from './config.js';
 
-// Helper for CLI input when running locally without process.env.PHONE_NUMBER
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
-const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+// Safe readline prompt for interactive CLI environments
+const promptPhoneNumber = () => {
+  return new Promise((resolve) => {
+    // If running in non-interactive environment (e.g. Render), don't open readline
+    if (!process.stdin.isTTY) {
+      return resolve(null);
+    }
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    rl.question('\n📱 Enter your WhatsApp phone number (with country code, e.g., 14155552671): ', (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+};
 
 // ==========================================
 // 🌐 DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
@@ -66,7 +79,7 @@ async function startBot() {
     let phoneNumber = process.env.PHONE_NUMBER;
 
     if (!phoneNumber) {
-      phoneNumber = await question('\n📱 Enter your WhatsApp phone number (with country code, e.g., 14155552671): ');
+      phoneNumber = await promptPhoneNumber();
     }
 
     // Clean phone number input (digits only)
@@ -81,10 +94,11 @@ async function startBot() {
         console.log(`🏴‍☠️ YOUR WHATSAPP PAIRING CODE: ${code}`);
         console.log('========================================\n');
       } catch (err) {
-        console.error('Failed to request pairing code:', err.message || err);
+        console.error('❌ Failed to request pairing code:', err.message || err);
       }
     } else {
-      console.error('❌ No phone number provided. Cannot generate pairing code.');
+      console.error('\n⚠️ ATTENTION: No phone number provided and non-interactive environment detected.');
+      console.error('👉 Please set the PHONE_NUMBER environment variable in your Render settings (e.g. 14155552671).\n');
     }
   }
 
@@ -140,7 +154,7 @@ async function startBot() {
 
       const hasPrefix = rawCommand.startsWith(CONFIG.PREFIX);
 
-      // 🛑 CRITICAL SILENCE FIX: Ignore ALL non-prefixed messages in groups completely
+      // 🛑 Ignore non-prefixed messages in groups
       if (isGroup && !hasPrefix) {
         return; 
       }
@@ -175,7 +189,7 @@ async function startBot() {
         return;
       }
 
-      // 🛑 SECONDARY PROTECTION: Never run AI / Fallback in groups
+      // 🛑 Never run AI / Fallback in groups
       if (isGroup) {
         return;
       }
