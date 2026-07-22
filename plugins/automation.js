@@ -2,12 +2,56 @@
 // 🛡️ DYNAMIC GROUP WELCOME & GOODBYE ENGINE
 // ==========================================
 
+// Global state toggles
+let welcomeStatus = true;
+let goodbyeStatus = true;
+
+/**
+ * Command handlers to toggle features on or off
+ */
+export async function toggleWelcome(sock, msg, option) {
+  const choice = option?.toLowerCase();
+  if (choice === 'on' || choice === 'enable' || choice === 'active') {
+    welcomeStatus = true;
+    return await sock.sendMessage(msg.key.remoteJid, { text: `🟢 *WELCOME MESSAGES ENABLED*` });
+  } else if (choice === 'off' || choice === 'disable' || choice === 'deactivate') {
+    welcomeStatus = false;
+    return await sock.sendMessage(msg.key.remoteJid, { text: `🔴 *WELCOME MESSAGES DISABLED*` });
+  } else {
+    return await sock.sendMessage(msg.key.remoteJid, { 
+      text: `📌 *WELCOME SYSTEM STATUS:* ${welcomeStatus ? '🟢 ACTIVE' : '🔴 DISABLED'}\n\n💡 *Usage:* \`.welcome on\` or \`.welcome off\`` 
+    });
+  }
+}
+
+export async function toggleGoodbye(sock, msg, option) {
+  const choice = option?.toLowerCase();
+  if (choice === 'on' || choice === 'enable' || choice === 'active') {
+    goodbyeStatus = true;
+    return await sock.sendMessage(msg.key.remoteJid, { text: `🟢 *GOODBYE MESSAGES ENABLED*` });
+  } else if (choice === 'off' || choice === 'disable' || choice === 'deactivate') {
+    goodbyeStatus = false;
+    return await sock.sendMessage(msg.key.remoteJid, { text: `🔴 *GOODBYE MESSAGES DISABLED*` });
+  } else {
+    return await sock.sendMessage(msg.key.remoteJid, { 
+      text: `📌 *GOODBYE SYSTEM STATUS:* ${goodbyeStatus ? '🟢 ACTIVE' : '🔴 DISABLED'}\n\n💡 *Usage:* \`.goodbye on\` or \`.goodbye off\`` 
+    });
+  }
+}
+
+/**
+ * Participant updates event handler
+ */
 export async function handleGroupParticipants(sock, update) {
   const { id, participants, action } = update;
   
   if (!id.endsWith('@g.us')) return;
 
-  // 📥 10 Short Welcome Variations - {user} dal diya
+  // Check feature statuses before proceeding
+  if (action === 'add' && !welcomeStatus) return;
+  if (action === 'remove' && !goodbyeStatus) return;
+
+  // 📥 10 Short Welcome Variations - {user}
   const welcomeVariants = [
     `🏴‍☠️ *New warrior in the deck!* {user} Drop your lineup to secure a slot.`,
     `⚔️ *Challenger approaching!* Welcome {user} to Pirates Paid Scrims.`,
@@ -21,7 +65,7 @@ export async function handleGroupParticipants(sock, update) {
     `🔥 *A new warrior joins the lobby.* {user} Prepare your lineup!`
   ];
 
-  // 📤 10 Short Goodbye Variations - {user} dal diya
+  // 📤 10 Short Goodbye Variations - {user}
   const goodbyeVariants = [
     `💀 *Man down!* {user} has been eliminated from the group.`,
     `🚪 *Squad member wiped!* {user} left. A slot has opened up.`,
@@ -37,7 +81,7 @@ export async function handleGroupParticipants(sock, update) {
 
   for (const participant of participants) {
     let messageText = "";
-    const userTag = `@${participant.split('@')[0]}`; // 919876543210 format
+    const userTag = `@${participant.split('@')[0]}`;
 
     if (action === 'add') {
       const randomIndex = Math.floor(Math.random() * welcomeVariants.length);
@@ -51,11 +95,11 @@ export async function handleGroupParticipants(sock, update) {
       try {
         await sock.sendMessage(id, { 
           text: messageText,
-          mentions: [participant] // <-- YE LINE IMPORTANT HAI TAG KE LIYE
+          mentions: [participant]
         });
       } catch (err) {
         console.error(`Automation layout failed to send to group ${id}:`, err.message);
       }
     }
   }
-    }
+}
