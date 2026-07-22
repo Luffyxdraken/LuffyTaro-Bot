@@ -1,232 +1,128 @@
-import { 
-  makeWASocket, 
+import makeWASocket, { 
   useMultiFileAuthState, 
-  DisconnectReason, 
-  fetchLatestBaileysVersion,
-  delay
+  fetchLatestBaileysVersion, 
+  DisconnectReason 
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { Boom } from '@hapi/boom';
 import http from 'http';
-import readline from 'readline';
-
-// Import commands and helpers from plugins/commands.js
-import { 
-  commands, 
-  verifyAuthority, 
-  getAuthorizedPosterGroups, 
-  isLoopActive, 
-  buildLobbyMessage 
-} from './plugins/commands.js';
-
-// Import automation handlers and toggles from plugins/automation.js
-import { 
-  handleGroupParticipants, 
-  toggleWelcome, 
-  toggleGoodbye 
-} from './plugins/automation.js';
-
-import { CONFIG } from './config.js';
-
-// Safe readline prompt for interactive CLI environments
-const promptPhoneNumber = () => {
-  return new Promise((resolve) => {
-    // If running in non-interactive environment (e.g. Render), don't open readline
-    if (!process.stdin.isTTY) {
-      return resolve(null);
-    }
-
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout
-    });
-
-    rl.question('\n📱 Enter your WhatsApp phone number (with country code, e.g., 14155552671): ', (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
-};
+import fs from 'fs';
+import path from 'path';
 
 // ==========================================
-// 🌐 DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
+// 1. RENDER PORT HEALTHCHECK (Prevents Timeout)
 // ==========================================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('🏴‍☠️ LuffyTaro Bot is ONLINE!');
+  res.end('LuffyTaro Bot is Active and Running!');
 }).listen(PORT, () => {
-  console.log(`🌐 Health check server listening on port ${PORT}`);
+  console.log(`🌐 Healthcheck server listening on port ${PORT}`);
 });
 
+// ==========================================
+// 2. MAIN BOT FUNCTION
+// ==========================================
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
+  // Save/Load session from local ./session folder
+  const { state, saveCreds } = await useMultiFileAuthState('./session');
   const { version } = await fetchLatestBaileysVersion();
 
-  // Initialize socket — explicitly disable QR printing
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    browser: ['LuffyTaro Bot', 'Chrome', '1.0.0'],
-    printQRInTerminal: false
+    browser: ['Ubuntu', 'Chrome', '20.0.04']
   });
 
   // ==========================================
-  // 🔑 PAIRING CODE AUTHENTICATION LOGIC
+  // 3. PAIRING CODE GENERATOR
   // ==========================================
   if (!sock.authState.creds.registered) {
-    let phoneNumber = process.env.PHONE_NUMBER;
+    const phoneNumber = "919382276556"; // Your WhatsApp number
 
-    if (!phoneNumber) {
-      phoneNumber = await promptPhoneNumber();
-    }
-
-    // Clean phone number input (digits only)
-    phoneNumber = phoneNumber ? phoneNumber.replace(/[^0-9]/g, '') : '';
-
-    if (phoneNumber) {
-      // Delay allows socket connection to initialize before requesting code
-      await delay(3000);
+    setTimeout(async () => {
       try {
-        const code = await sock.requestPairingCode(phoneNumber);
-        console.log('\n========================================');
-        console.log(`🏴‍☠️ YOUR WHATSAPP PAIRING CODE: ${code}`);
-        console.log('========================================\n');
+        let code = await sock.requestPairingCode(phoneNumber);
+        code = code?.match(/.{1,4}/g)?.join("-") || code;
+        console.log(`\n=================================`);
+        console.log(`🔑 YOUR PAIRING CODE: ${code}`);
+        console.log(`=================================\n`);
       } catch (err) {
-        console.error('❌ Failed to request pairing code:', err.message || err);
+        console.error("Error requesting pairing code:", err);
       }
-    } else {
-      console.error('\n⚠️ ATTENTION: No phone number provided and non-interactive environment detected.');
-      console.error('👉 Please set the PHONE_NUMBER environment variable in your Render settings (e.g. 14155552671).\n');
-    }
+    }, 4000);
   }
 
+  // Save session credentials
   sock.ev.on('creds.update', saveCreds);
 
   // ==========================================
-  // 🔗 CONNECTION MANAGEMENT
+  // 4. CONNECTION HANDLING
   // ==========================================
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update;
-
+    
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error instanceof Boom)
-        ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
-        : true;
+      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
       console.log('Connection closed. Reconnecting:', shouldReconnect);
-      if (shouldReconnect) startBot();
+      if (shouldReconnect) {
+        startBot();
+      }
     } else if (connection === 'open') {
-      console.log('🏴‍☠️ LuffyTaro Bot is ONLINE and connected to WhatsApp!');
+      console.log('✅ LuffyTaro Bot successfully connected to WhatsApp!');
     }
   });
 
   // ==========================================
-  // 👥 GROUP PARTICIPANTS AUTOMATION EVENT
+  // 5. WELCOME MESSAGE FOR NEW MEMBERS
   // ==========================================
-  sock.ev.on('group-participants.update', async (update) => {
-    try {
-      await handleGroupParticipants(sock, update);
-    } catch (err) {
-      console.error('Error handling group participant event:', err.message);
-    }
-  });
+  sock.ev.on('group-participants.update', async (participantUpdate) => {
+    const { id, participants, action } = participantUpdate;
 
-  // ==========================================
-  // 📩 INCOMING MESSAGES HANDLER & ROUTER
-  // ==========================================
-  sock.ev.on('messages.upsert', async (chatUpdate) => {
-    try {
-      const msg = chatUpdate.messages[0];
-      if (!msg || !msg.message || msg.key.fromMe) return;
+    for (const userJid of participants) {
+      if (action === 'add') {
+        console.log(`🏴‍☠️ New player joined group ${id}:${userJid}`);
 
-      const remoteJid = msg.key.remoteJid;
-      const isGroup = remoteJid.endsWith('@g.us');
-      const textMessage = msg.message.conversation || 
-                          msg.message.extendedTextMessage?.text || "";
+        const welcomeText = `🏴‍☠️ WELCOME TO PIRATE SCRIMS 🏴‍☠️
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
 
-      if (!textMessage.trim()) return;
+Ahoy, @${userJid.split('@')[0]}! You have entered the deadliest Free Fire battleground. Get your squad ready for ultimate glory!
 
-      const trimmedText = textMessage.trim();
-      const parts = trimmedText.split(/ +/);
-      const rawCommand = parts[0].toLowerCase();
-      const args = parts.slice(1);
+☠️ TOURNAMENT RULES:
+• No hacks / No third-party modules (Instant Ban)
+• Emulators are strictly prohibited unless specified
+• Team registration must match your payment receipt
 
-      const hasPrefix = rawCommand.startsWith(CONFIG.PREFIX);
+💰 PAID MATCH DETAILS:
+• Daily dynamic prize pools distributed via auto-payout
+• Drop your team slot list by typing: .slots
 
-      // 🛑 Ignore non-prefixed messages in groups
-      if (isGroup && !hasPrefix) {
-        return; 
-      }
+Good luck, survivors! May the best squad plunder the loot. 💥`;
 
-      const cleanCommand = hasPrefix 
-        ? rawCommand.slice(CONFIG.PREFIX.length) 
-        : rawCommand;
+        const logoPath = path.join(process.cwd(), 'logo.png');
 
-      // 1. ROUTE AUTOMATION TOGGLES (.welcome & .goodbye)
-      if (cleanCommand === 'welcome' && hasPrefix) {
-        await toggleWelcome(sock, msg, args[0]);
-        return;
-      }
-
-      if (cleanCommand === 'goodbye' && hasPrefix) {
-        await toggleGoodbye(sock, msg, args[0]);
-        return;
-      }
-
-      // 2. ROUTE REGISTERED COMMANDS
-      if (hasPrefix && commands[cleanCommand]) {
-        const adminOnlyCommands = ['set', 'setadmin', 'activate', 'deactivate', 'authorize', 'unauthorize', 'private', 'public', 'send', 'testpost'];
-        if (adminOnlyCommands.includes(cleanCommand)) {
-          const isSenderAdmin = verifyAuthority(remoteJid, msg);
-          if (!isSenderAdmin) {
-            await sock.sendMessage(remoteJid, { text: `❌ *ACCESS DENIED: Admin clearance required.*` });
-            return;
-          }
-        }
-
-        await commands[cleanCommand](sock, msg, args);
-        return;
-      }
-
-      // 🛑 Never run AI / Fallback in groups
-      if (isGroup) {
-        return;
-      }
-
-      // 3. RUN AI / FALLBACK ONLY IN PRIVATE DMs
-      await commands.handleAiFallback(sock, msg, trimmedText);
-
-    } catch (err) {
-      console.error('Error processing incoming message:', err);
-    }
-  });
-
-  // ==========================================
-  // 📢 BROADCAST LOOP AUTOMATION (10 MINS)
-  // ==========================================
-  setInterval(async () => {
-    try {
-      if (!isLoopActive()) return;
-
-      const authorizedGroups = getAuthorizedPosterGroups();
-      if (!authorizedGroups || authorizedGroups.length === 0) return;
-
-      const lobbyMessage = buildLobbyMessage();
-      if (!lobbyMessage) return; // Skip off-hours
-
-      for (const groupId of authorizedGroups) {
         try {
-          await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(resolve => setTimeout(resolve, 4000));
-        } catch (postErr) {
-          console.error(`Failed broadcast post to ${groupId}:`, postErr.message);
+          // Send with logo picture if logo.png exists in root folder
+          if (fs.existsSync(logoPath)) {
+            await sock.sendMessage(id, {
+              image: fs.readFileSync(logoPath),
+              caption: welcomeText,
+              mentions: [userJid]
+            });
+          } else {
+            // Fallback to text message if logo isn't uploaded yet
+            await sock.sendMessage(id, {
+              text: welcomeText,
+              mentions: [userJid]
+            });
+          }
+        } catch (err) {
+          console.error("Failed to send welcome message:", err);
         }
       }
-    } catch (err) {
-      console.error('Error running broadcast loop:', err.message);
     }
-  }, 10 * 60 * 1000);
+  });
 }
 
+// Start the bot
 startBot();
