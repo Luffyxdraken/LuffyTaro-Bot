@@ -2,7 +2,6 @@
 // 🛡️ DYNAMIC GROUP WELCOME & GOODBYE ENGINE
 // ==========================================
 
-// Global state toggles
 let welcomeStatus = true;
 let goodbyeStatus = true;
 
@@ -47,7 +46,7 @@ export async function handleGroupParticipants(sock, update) {
   
   if (!id.endsWith('@g.us')) return;
 
-  // Check feature statuses before proceeding
+  // Stop immediately if feature is toggled off
   if (action === 'add' && !welcomeStatus) return;
   if (action === 'remove' && !goodbyeStatus) return;
 
