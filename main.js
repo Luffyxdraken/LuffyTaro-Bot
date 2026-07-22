@@ -2,12 +2,13 @@ import {
   makeWASocket, 
   useMultiFileAuthState, 
   DisconnectReason, 
-  fetchLatestBaileysVersion 
+  fetchLatestBaileysVersion,
+  delay
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode-terminal';
 import http from 'http';
+import readline from 'readline';
 
 // Import commands and helpers from plugins/commands.js
 import { 
@@ -27,6 +28,13 @@ import {
 
 import { CONFIG } from './config.js';
 
+// Helper for CLI input when running locally without process.env.PHONE_NUMBER
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout
+});
+const question = (text) => new Promise((resolve) => rl.question(text, resolve));
+
 // ==========================================
 // 🌐 DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
 // ==========================================
@@ -42,27 +50,51 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
   const { version } = await fetchLatestBaileysVersion();
 
-  // Socket instance without deprecated printQRInTerminal
+  // Initialize socket — explicitly disable QR printing
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    browser: ['LuffyTaro Bot', 'Chrome', '1.0.0']
+    browser: ['LuffyTaro Bot', 'Chrome', '1.0.0'],
+    printQRInTerminal: false
   });
+
+  // ==========================================
+  // 🔑 PAIRING CODE AUTHENTICATION LOGIC
+  // ==========================================
+  if (!sock.authState.creds.registered) {
+    let phoneNumber = process.env.PHONE_NUMBER;
+
+    if (!phoneNumber) {
+      phoneNumber = await question('\n📱 Enter your WhatsApp phone number (with country code, e.g., 14155552671): ');
+    }
+
+    // Clean phone number input (digits only)
+    phoneNumber = phoneNumber ? phoneNumber.replace(/[^0-9]/g, '') : '';
+
+    if (phoneNumber) {
+      // Delay allows socket connection to initialize before requesting code
+      await delay(3000);
+      try {
+        const code = await sock.requestPairingCode(phoneNumber);
+        console.log('\n========================================');
+        console.log(`🏴‍☠️ YOUR WHATSAPP PAIRING CODE: ${code}`);
+        console.log('========================================\n');
+      } catch (err) {
+        console.error('Failed to request pairing code:', err.message || err);
+      }
+    } else {
+      console.error('❌ No phone number provided. Cannot generate pairing code.');
+    }
+  }
 
   sock.ev.on('creds.update', saveCreds);
 
   // ==========================================
-  // 🔗 CONNECTION & QR MANAGEMENT
+  // 🔗 CONNECTION MANAGEMENT
   // ==========================================
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    // Render QR Code in terminal if login required
-    if (qr) {
-      console.log('\n🏴‍☠️ SCAN THIS QR CODE WITH WHATSAPP TO LOG IN:');
-      qrcode.generate(qr, { small: true });
-    }
+    const { connection, lastDisconnect } = update;
 
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error instanceof Boom)
