@@ -21,7 +21,7 @@ import {
   handleGroupParticipants, 
   toggleWelcome, 
   toggleGoodbye 
-} from './automation.js';
+} from './plugins/automation.js';
 
 import { CONFIG } from './config.js';
 
