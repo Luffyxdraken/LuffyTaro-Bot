@@ -6,10 +6,8 @@ import {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode-terminal';
-import http from 'http';
 
-// Import commands and helpers from plugins/commands.js
+// Import commands and helpers from commands.js
 import { 
   commands, 
   verifyAuthority, 
@@ -18,52 +16,33 @@ import {
   buildLobbyMessage 
 } from './plugins/commands.js';
 
-// Import automation handlers and toggles from plugins/automation.js
+// Import automation handlers and toggles from automation.js
 import { 
   handleGroupParticipants, 
   toggleWelcome, 
   toggleGoodbye 
-} from './plugins/automation.js';
+} from './automation.js';
 
 import { CONFIG } from './config.js';
-
-// ==========================================
-// 🌐 DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
-// ==========================================
-const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('🏴‍☠️ LuffyTaro Bot is ONLINE!');
-}).listen(PORT, () => {
-  console.log(`🌐 Health check server listening on port ${PORT}`);
-});
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
   const { version } = await fetchLatestBaileysVersion();
 
-  // Socket instance (deprecated printQRInTerminal removed)
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
+    printQRInTerminal: true,
     auth: state,
     browser: ['LuffyTaro Bot', 'Chrome', '1.0.0']
   });
 
+  // Save auth credentials whenever updated
   sock.ev.on('creds.update', saveCreds);
 
-  // ==========================================
-  // 🔗 CONNECTION & QR MANAGEMENT
-  // ==========================================
+  // Connection Management
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    // Render QR Code in terminal if login required
-    if (qr) {
-      console.log('\n🏴‍☠️ SCAN THIS QR CODE WITH WHATSAPP TO LOG IN:');
-      qrcode.generate(qr, { small: true });
-    }
-
+    const { connection, lastDisconnect } = update;
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
@@ -114,12 +93,12 @@ async function startBot() {
       // 1. ROUTE AUTOMATION TOGGLES (.welcome & .goodbye)
       if (cleanCommand === 'welcome' && hasPrefix) {
         await toggleWelcome(sock, msg, args[0]);
-        return;
+        return; // Silent exit — no default menu or AI fallback
       }
 
       if (cleanCommand === 'goodbye' && hasPrefix) {
         await toggleGoodbye(sock, msg, args[0]);
-        return;
+        return; // Silent exit — no default menu or AI fallback
       }
 
       // 2. ROUTE REGISTERED COMMANDS
@@ -137,9 +116,9 @@ async function startBot() {
         return;
       }
 
-      // 🛑 IGNORE NORMAL GROUP CHATTING / POSTS
+      // 🛑 CRITICAL FIX: DO NOT RESPOND TO REGULAR GROUP CHAT / POSTS
       if (isGroup) {
-        return;
+        return; // Silent exit inside groups for normal chatter
       }
 
       // 3. RUN AI / FALLBACK ONLY IN PRIVATE DMs
@@ -161,7 +140,7 @@ async function startBot() {
       if (!authorizedGroups || authorizedGroups.length === 0) return;
 
       const lobbyMessage = buildLobbyMessage();
-      if (!lobbyMessage) return;
+      if (!lobbyMessage) return; // Skip during off-hours
 
       for (const groupId of authorizedGroups) {
         try {
@@ -174,7 +153,7 @@ async function startBot() {
     } catch (err) {
       console.error('Error running broadcast loop:', err.message);
     }
-  }, 10 * 60 * 1000);
+  }, 10 * 60 * 1000); // 10 minutes
 }
 
 startBot();
