@@ -6,8 +6,9 @@ import {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode-terminal';
 
-// Import commands and helpers from commands.js
+// Import commands and helpers from plugins/commands.js
 import { 
   commands, 
   verifyAuthority, 
@@ -16,7 +17,7 @@ import {
   buildLobbyMessage 
 } from './plugins/commands.js';
 
-// Import automation handlers and toggles from automation.js
+// Import automation handlers and toggles from plugins/automation.js
 import { 
   handleGroupParticipants, 
   toggleWelcome, 
@@ -29,20 +30,29 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
   const { version } = await fetchLatestBaileysVersion();
 
+  // Initializing Baileys Socket without deprecated printQRInTerminal
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: true,
     auth: state,
     browser: ['LuffyTaro Bot', 'Chrome', '1.0.0']
   });
 
-  // Save auth credentials whenever updated
+  // Save authentication credentials on update
   sock.ev.on('creds.update', saveCreds);
 
-  // Connection Management
+  // ==========================================
+  // 🔗 CONNECTION & QR MANAGEMENT
+  // ==========================================
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    // Render QR Code in terminal if authentication is required
+    if (qr) {
+      console.log('\n🏴‍☠️ Scan this QR Code with WhatsApp to log in:');
+      qrcode.generate(qr, { small: true });
+    }
+
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
@@ -93,12 +103,12 @@ async function startBot() {
       // 1. ROUTE AUTOMATION TOGGLES (.welcome & .goodbye)
       if (cleanCommand === 'welcome' && hasPrefix) {
         await toggleWelcome(sock, msg, args[0]);
-        return; // Silent exit — no default menu or AI fallback
+        return; // Prevents fallthrough to fallback menu!
       }
 
       if (cleanCommand === 'goodbye' && hasPrefix) {
         await toggleGoodbye(sock, msg, args[0]);
-        return; // Silent exit — no default menu or AI fallback
+        return; // Prevents fallthrough to fallback menu!
       }
 
       // 2. ROUTE REGISTERED COMMANDS
@@ -116,9 +126,9 @@ async function startBot() {
         return;
       }
 
-      // 🛑 CRITICAL FIX: DO NOT RESPOND TO REGULAR GROUP CHAT / POSTS
+      // 🛑 CRITICAL PROTECTION: DO NOT RESPOND TO NORMAL GROUP CHAT / POSTS
       if (isGroup) {
-        return; // Silent exit inside groups for normal chatter
+        return; // Silent exit in groups for regular messages
       }
 
       // 3. RUN AI / FALLBACK ONLY IN PRIVATE DMs
@@ -156,4 +166,5 @@ async function startBot() {
   }, 10 * 60 * 1000); // 10 minutes
 }
 
+// Launch bot application
 startBot();
