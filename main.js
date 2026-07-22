@@ -6,8 +6,10 @@ import {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
+import qrcode from 'qrcode-terminal';
+import http from 'http';
 
-// Import commands and helpers from commands.js
+// Import commands and helpers from plugins/commands.js
 import { 
   commands, 
   verifyAuthority, 
@@ -16,33 +18,52 @@ import {
   buildLobbyMessage 
 } from './plugins/commands.js';
 
-// Import automation handlers and toggles from automation.js
+// Import automation handlers and toggles from plugins/automation.js
 import { 
   handleGroupParticipants, 
   toggleWelcome, 
   toggleGoodbye 
-} from './automation.js';
+} from './plugins/automation.js';
 
 import { CONFIG } from './config.js';
+
+// ==========================================
+// 🌐 DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
+// ==========================================
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('🏴‍☠️ LuffyTaro Bot is ONLINE!');
+}).listen(PORT, () => {
+  console.log(`🌐 Health check server listening on port ${PORT}`);
+});
 
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
   const { version } = await fetchLatestBaileysVersion();
 
+  // Socket instance without deprecated printQRInTerminal
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
-    printQRInTerminal: true,
     auth: state,
     browser: ['LuffyTaro Bot', 'Chrome', '1.0.0']
   });
 
-  // Save auth credentials whenever updated
   sock.ev.on('creds.update', saveCreds);
 
-  // Connection Management
+  // ==========================================
+  // 🔗 CONNECTION & QR MANAGEMENT
+  // ==========================================
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    // Render QR Code in terminal if login required
+    if (qr) {
+      console.log('\n🏴‍☠️ SCAN THIS QR CODE WITH WHATSAPP TO LOG IN:');
+      qrcode.generate(qr, { small: true });
+    }
+
     if (connection === 'close') {
       const shouldReconnect = (lastDisconnect?.error instanceof Boom)
         ? lastDisconnect.error.output.statusCode !== DisconnectReason.loggedOut
@@ -86,6 +107,12 @@ async function startBot() {
       const args = parts.slice(1);
 
       const hasPrefix = rawCommand.startsWith(CONFIG.PREFIX);
+
+      // 🛑 CRITICAL SILENCE FIX: Ignore ALL non-prefixed messages in groups completely
+      if (isGroup && !hasPrefix) {
+        return; 
+      }
+
       const cleanCommand = hasPrefix 
         ? rawCommand.slice(CONFIG.PREFIX.length) 
         : rawCommand;
@@ -93,12 +120,12 @@ async function startBot() {
       // 1. ROUTE AUTOMATION TOGGLES (.welcome & .goodbye)
       if (cleanCommand === 'welcome' && hasPrefix) {
         await toggleWelcome(sock, msg, args[0]);
-        return; // Silent exit — no default menu or AI fallback
+        return;
       }
 
       if (cleanCommand === 'goodbye' && hasPrefix) {
         await toggleGoodbye(sock, msg, args[0]);
-        return; // Silent exit — no default menu or AI fallback
+        return;
       }
 
       // 2. ROUTE REGISTERED COMMANDS
@@ -116,9 +143,9 @@ async function startBot() {
         return;
       }
 
-      // 🛑 CRITICAL FIX: DO NOT RESPOND TO REGULAR GROUP CHAT / POSTS
+      // 🛑 SECONDARY PROTECTION: Never run AI / Fallback in groups
       if (isGroup) {
-        return; // Silent exit inside groups for normal chatter
+        return;
       }
 
       // 3. RUN AI / FALLBACK ONLY IN PRIVATE DMs
@@ -140,7 +167,7 @@ async function startBot() {
       if (!authorizedGroups || authorizedGroups.length === 0) return;
 
       const lobbyMessage = buildLobbyMessage();
-      if (!lobbyMessage) return; // Skip during off-hours
+      if (!lobbyMessage) return; // Skip off-hours
 
       for (const groupId of authorizedGroups) {
         try {
@@ -153,7 +180,7 @@ async function startBot() {
     } catch (err) {
       console.error('Error running broadcast loop:', err.message);
     }
-  }, 10 * 60 * 1000); // 10 minutes
+  }, 10 * 60 * 1000);
 }
 
 startBot();
