@@ -74,6 +74,7 @@ async function startBot() {
       if (!msg || !msg.message || msg.key.fromMe) return;
 
       const remoteJid = msg.key.remoteJid;
+      const isGroup = remoteJid.endsWith('@g.us');
       const textMessage = msg.message.conversation || 
                           msg.message.extendedTextMessage?.text || "";
 
@@ -84,25 +85,24 @@ async function startBot() {
       const rawCommand = parts[0].toLowerCase();
       const args = parts.slice(1);
 
-      // Extract command name removing dot prefix if present
-      const cleanCommand = rawCommand.startsWith(CONFIG.PREFIX) 
+      const hasPrefix = rawCommand.startsWith(CONFIG.PREFIX);
+      const cleanCommand = hasPrefix 
         ? rawCommand.slice(CONFIG.PREFIX.length) 
         : rawCommand;
 
       // 1. ROUTE AUTOMATION TOGGLES (.welcome & .goodbye)
-      if (cleanCommand === 'welcome') {
+      if (cleanCommand === 'welcome' && hasPrefix) {
         await toggleWelcome(sock, msg, args[0]);
-        return; // Prevent fallthrough to menu/AI!
+        return; // Silent exit — no default menu or AI fallback
       }
 
-      if (cleanCommand === 'goodbye') {
+      if (cleanCommand === 'goodbye' && hasPrefix) {
         await toggleGoodbye(sock, msg, args[0]);
-        return; // Prevent fallthrough to menu/AI!
+        return; // Silent exit — no default menu or AI fallback
       }
 
       // 2. ROUTE REGISTERED COMMANDS
-      if (rawCommand.startsWith(CONFIG.PREFIX) && commands[cleanCommand]) {
-        // Admin verification for administrative commands
+      if (hasPrefix && commands[cleanCommand]) {
         const adminOnlyCommands = ['set', 'setadmin', 'activate', 'deactivate', 'authorize', 'unauthorize', 'private', 'public', 'send', 'testpost'];
         if (adminOnlyCommands.includes(cleanCommand)) {
           const isSenderAdmin = verifyAuthority(remoteJid, msg);
@@ -116,7 +116,12 @@ async function startBot() {
         return;
       }
 
-      // 3. AI / FALLBACK / NATURAL KEYWORD ROUTER
+      // 🛑 CRITICAL FIX: DO NOT RESPOND TO REGULAR GROUP CHAT / POSTS
+      if (isGroup) {
+        return; // Silent exit inside groups for normal chatter
+      }
+
+      // 3. RUN AI / FALLBACK ONLY IN PRIVATE DMs
       await commands.handleAiFallback(sock, msg, trimmedText);
 
     } catch (err) {
@@ -140,7 +145,7 @@ async function startBot() {
       for (const groupId of authorizedGroups) {
         try {
           await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(resolve => setTimeout(resolve, 4000)); // Delay between group posts
+          await new Promise(resolve => setTimeout(resolve, 4000));
         } catch (postErr) {
           console.error(`Failed broadcast post to ${groupId}:`, postErr.message);
         }
@@ -148,8 +153,7 @@ async function startBot() {
     } catch (err) {
       console.error('Error running broadcast loop:', err.message);
     }
-  }, 10 * 60 * 1000); // Runs every 10 minutes
+  }, 10 * 60 * 1000); // 10 minutes
 }
 
-// Launch application
 startBot();
