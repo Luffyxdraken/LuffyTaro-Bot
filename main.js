@@ -7,6 +7,7 @@ import {
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
 import qrcode from 'qrcode-terminal';
+import http from 'http';
 
 // Import commands and helpers from plugins/commands.js
 import { 
@@ -26,11 +27,22 @@ import {
 
 import { CONFIG } from './config.js';
 
+// ==========================================
+// 🌐 DUMMY HTTP SERVER FOR RENDER HEALTH CHECKS
+// ==========================================
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('🏴‍☠️ LuffyTaro Bot is ONLINE!');
+}).listen(PORT, () => {
+  console.log(`🌐 Health check server listening on port ${PORT}`);
+});
+
 async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
   const { version } = await fetchLatestBaileysVersion();
 
-  // Initializing Baileys Socket without deprecated printQRInTerminal
+  // Socket instance (deprecated printQRInTerminal removed)
   const sock = makeWASocket({
     version,
     logger: pino({ level: 'silent' }),
@@ -38,7 +50,6 @@ async function startBot() {
     browser: ['LuffyTaro Bot', 'Chrome', '1.0.0']
   });
 
-  // Save authentication credentials on update
   sock.ev.on('creds.update', saveCreds);
 
   // ==========================================
@@ -47,9 +58,9 @@ async function startBot() {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    // Render QR Code in terminal if authentication is required
+    // Render QR Code in terminal if login required
     if (qr) {
-      console.log('\n🏴‍☠️ Scan this QR Code with WhatsApp to log in:');
+      console.log('\n🏴‍☠️ SCAN THIS QR CODE WITH WHATSAPP TO LOG IN:');
       qrcode.generate(qr, { small: true });
     }
 
@@ -103,12 +114,12 @@ async function startBot() {
       // 1. ROUTE AUTOMATION TOGGLES (.welcome & .goodbye)
       if (cleanCommand === 'welcome' && hasPrefix) {
         await toggleWelcome(sock, msg, args[0]);
-        return; // Prevents fallthrough to fallback menu!
+        return;
       }
 
       if (cleanCommand === 'goodbye' && hasPrefix) {
         await toggleGoodbye(sock, msg, args[0]);
-        return; // Prevents fallthrough to fallback menu!
+        return;
       }
 
       // 2. ROUTE REGISTERED COMMANDS
@@ -126,9 +137,9 @@ async function startBot() {
         return;
       }
 
-      // 🛑 CRITICAL PROTECTION: DO NOT RESPOND TO NORMAL GROUP CHAT / POSTS
+      // 🛑 IGNORE NORMAL GROUP CHATTING / POSTS
       if (isGroup) {
-        return; // Silent exit in groups for regular messages
+        return;
       }
 
       // 3. RUN AI / FALLBACK ONLY IN PRIVATE DMs
@@ -150,7 +161,7 @@ async function startBot() {
       if (!authorizedGroups || authorizedGroups.length === 0) return;
 
       const lobbyMessage = buildLobbyMessage();
-      if (!lobbyMessage) return; // Skip during off-hours
+      if (!lobbyMessage) return;
 
       for (const groupId of authorizedGroups) {
         try {
@@ -163,8 +174,7 @@ async function startBot() {
     } catch (err) {
       console.error('Error running broadcast loop:', err.message);
     }
-  }, 10 * 60 * 1000); // 10 minutes
+  }, 10 * 60 * 1000);
 }
 
-// Launch bot application
 startBot();
