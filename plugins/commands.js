@@ -1,3 +1,5 @@
+import fs from 'fs';
+import path from 'path';
 import { CONFIG } from '../config.js'; 
 import OpenAI from 'openai';
 
@@ -31,14 +33,38 @@ let SHIFT_ADMINS = {
   night: "917866052212"  // 9:00 PM to 12:00 AM IST
 };
 
-// LIVE CHAT DATABASE STORAGE
-let LIVE_SCRIM_DATABASE = {
-  slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• B2B 4 Match (12:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (3:00 PM): 19/25 Slots Filled (Upcoming)\n• B2B 4 Match (6:00 PM): 05/25 Slots Filled (Upcoming)\n• B2B 4 Match (9:00 PM): 0/12 Slots Filled (Upcoming)\n•B2B 4 Match (12:00 AM): 0/12 Slots Filled (Upcoming)\n\n💬 Send your team lineup to secure a position now!`,
+// ==========================================
+// 💾 PERSISTENT DATABASE SETUP (JSON STORAGE)
+// ==========================================
+const DB_PATH = path.join(process.cwd(), 'database.json');
+
+const DEFAULT_DATABASE = {
+  slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• B2B 4 Match (12:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (3:00 PM): 19/25 Slots Filled (Upcoming)\n• B2B 4 Match (6:00 PM): 05/25 Slots Filled (Upcoming)\n• B2B 4 Match (9:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (12:00 AM): 0/12 Slots Filled (Upcoming)\n\n💬 Send your team lineup to secure a position now!`,
   tournament: `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: N/A\n• Total Teams: N/A\n• Registration: N/A\n\nType \`price\` to check structural entrance points.`,
   price: `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single CS Match Entry: 10/20/30/40/50 RS per lineup\n• BR B2B (4 Matches): Upcoming \n• Free Tournament: Upcoming\n\nDM host or type \`payout\` to understand transaction structures.`,
   schedule: `⏰ *DAILY MATCH TIMETABLE*\n───────────────────────────\n• 🎮 Map 1 (Bermuda): First Match(upcoming)\n• 🎮 Map 2 (Purgatory): Second Match(upcoming)\n• 🎮 Map 3 (Kalahari): Third Match(upcoming)\n\nRoom details are sent out exactly 15 minutes before launch time.`,
   payout: `💸 *PRIZE DISTRIBUTION SYSTEM*\n───────────────────────────\n• Winner Take All structures clear inside 15 minutes.\n• Payments processed through UPI, GPay, and PhonePe.\n• Screenshots of placements must be dropped in the main group right as you finish.`
 };
+
+// Load database from file system if exists
+let LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE };
+if (fs.existsSync(DB_PATH)) {
+  try {
+    const savedData = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+    LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE, ...savedData };
+  } catch (err) {
+    console.error("Error reading database.json:", err.message);
+  }
+}
+
+// Function to save updates directly to disk
+function saveDatabase() {
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(LIVE_SCRIM_DATABASE, null, 2));
+  } catch (err) {
+    console.error("Error saving database.json:", err.message);
+  }
+}
 
 // SHIFT MATRIX TIMETABLE (IST)
 export function getActiveAdminForTime() {
@@ -50,25 +76,13 @@ export function getActiveAdminForTime() {
   const minutes = istDate.getMinutes();
   const currentTimeValue = (hours * 100) + minutes; 
 
-  // 🛑 OFF-HOURS GUARDIAN: Skip posting between 12:00 AM Midnight and 10:29 AM IST
-  if (currentTimeValue < 1030) {
-    return null; // Prevents broadcast execution outside active operating hours
-  }
+  if (currentTimeValue < 1030) return null; // Off-hours safety check
 
-  // 🕒 10:30 AM to 3:00 PM IST (1030 to 1500)
-  if (currentTimeValue >= 1030 && currentTimeValue < 1500) {
-    return SHIFT_ADMINS.day;
-  }
-  // 🕒 3:00 PM to 9:00 PM IST (1500 to 2100)
-  else if (currentTimeValue >= 1500 && currentTimeValue < 2100) {
-    return SHIFT_ADMINS.eve;
-  } 
-  // 🕒 9:00 PM to 12:00 AM Midnight IST (2100 to 2359)
-  else if (currentTimeValue >= 2100 && currentTimeValue <= 2359) {
-    return SHIFT_ADMINS.night;
-  }
+  if (currentTimeValue >= 1030 && currentTimeValue < 1500) return SHIFT_ADMINS.day;
+  else if (currentTimeValue >= 1500 && currentTimeValue < 2100) return SHIFT_ADMINS.eve;
+  else if (currentTimeValue >= 2100 && currentTimeValue <= 2359) return SHIFT_ADMINS.night;
 
-  return null; // Fallback safety
+  return null;
 }
 
 // BROADCAST VARIANT ROTATOR
@@ -98,7 +112,6 @@ export function toggleBroadcastLoop(status) { loopRunningStatus = status; }
 
 export function verifyAuthority(sender, msg) { 
   if (!sender) return false;
-  
   const cleanSender = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const participant = msg?.key?.participant ? msg.key.participant.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
   const remoteJid = msg?.key?.remoteJid ? msg.key.remoteJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : "";
@@ -123,16 +136,16 @@ export const commands = {
   menu: async (sock, msg) => {
     const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n` +
       `• \`.menu\` / \`.help\` - Show this master command layout.\n` +
-      `• \`.guidelines\` / \`.rules\` - Display match rules.\n` +
       `• \`.slots\` - Query open matches and available slot layouts.\n` +
       `• \`.tournament\` - Details regarding ongoing official tournaments.\n` +
       `• \`.price\` - List entry fees and pricing sheets.\n` +
       `• \`.schedule\` - View daily and weekly match timings.\n` +
       `• \`.payout\` - Information on prize distribution.\n` +
-      `• \`.setadmin [day/eve/night] [num]\` - Dynamically update shift host.\n` +
-      `• \`.send [number] [msg]\` - Send direct messages across inboxes.`;
+      `• \`.set [slots/tournament/price/schedule/payout] [text]\` - Permanent database update.\n` +
+      `• \`.setadmin [day/eve/night] [num]\` - Dynamically update shift host.`;
     await sock.sendMessage(msg.key.remoteJid, { text });
   },
+
   help: async (sock, msg) => { 
     const currentHost = getActiveAdminForTime();
     const text = `🚨 *PIRATES DIRECT HELP CLEARANCE* 🚨\n───────────────────────────\n` +
@@ -153,7 +166,23 @@ export const commands = {
   schedule: async (sock, msg) => { await sock.sendMessage(msg.key.remoteJid, { text: LIVE_SCRIM_DATABASE.schedule }); },
   payout: async (sock, msg) => { await sock.sendMessage(msg.key.remoteJid, { text: LIVE_SCRIM_DATABASE.payout }); },
 
-  // Dynamic Shift Admin Manager Command
+  set: async (sock, msg, args) => {
+    const targetProperty = args[0]?.toLowerCase();
+    const cleanContent = args.slice(1).join(' ');
+
+    if (!targetProperty || !LIVE_SCRIM_DATABASE.hasOwnProperty(targetProperty)) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ *Invalid Property Target!*\nUse: \`.set [slots/tournament/price/schedule/payout] [new text]\`` });
+    }
+    if (!cleanContent) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Text body cannot be blank.` });
+    }
+
+    LIVE_SCRIM_DATABASE[targetProperty] = cleanContent;
+    saveDatabase();
+
+    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Database Updated & Saved Permanently!*\nProperty *${targetProperty}* has been updated and will stay saved even after a restart.` });
+  },
+
   setadmin: async (sock, msg, args) => {
     const shift = args[0]?.toLowerCase();
     let rawNum = args[1]?.replace(/[^0-9]/g, '');
@@ -177,13 +206,8 @@ export const commands = {
 
     if (!rawNum.startsWith('91') && rawNum.length === 10) rawNum = '91' + rawNum;
 
-    // Update shift number
     SHIFT_ADMINS[shift] = rawNum;
-
-    // Automatically add to master authorization list if not already present
-    if (!AUTHORIZED_ADMINS.includes(rawNum)) {
-      AUTHORIZED_ADMINS.push(rawNum);
-    }
+    if (!AUTHORIZED_ADMINS.includes(rawNum)) AUTHORIZED_ADMINS.push(rawNum);
 
     const labels = {
       day: "Morning/Day (10:30 AM - 3:00 PM)",
@@ -194,21 +218,6 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { 
       text: `✅ *SHIFT ADMIN UPDATED!*\n───────────────────────────\n• *Shift:* ${labels[shift]}\n• *New Host:* wa.me/${rawNum}` 
     });
-  },
-
-  set: async (sock, msg, args) => {
-    const targetProperty = args[0]?.toLowerCase();
-    const cleanContent = args.slice(1).join(' ');
-
-    if (!targetProperty || !LIVE_SCRIM_DATABASE.hasOwnProperty(targetProperty)) {
-      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ *Invalid Property Target!*\nUse: \`.set [slots/tournament/price/schedule/payout] [new text]\`` });
-    }
-    if (!cleanContent) {
-      return await sock.sendMessage(msg.key.remoteJid, { text: `❌ Text body cannot be blank.` });
-    }
-
-    LIVE_SCRIM_DATABASE[targetProperty] = cleanContent;
-    await sock.sendMessage(msg.key.remoteJid, { text: `✅ *Database Updated!*\nProperty *${targetProperty}* has been reconfigured in live memory.` });
   },
 
   send: async (sock, msg, args) => {
@@ -247,8 +256,12 @@ export const commands = {
     if (!lobbyMessage) {
       return await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ Cannot generate test post outside active broadcast hours (10:30 AM - 12:00 AM IST).` });
     }
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     for (const groupId of authorizedGroups) {
-      try { await sock.sendMessage(groupId, { text: lobbyMessage }); } catch (err) {}
+      try { 
+        await sock.sendMessage(groupId, { text: lobbyMessage });
+        await sleep(3500); 
+      } catch (err) {}
     }
   },
   authorize: async (sock, msg, args) => {
@@ -277,7 +290,6 @@ export const commands = {
     await sock.sendMessage(msg.key.remoteJid, { text: `🔓 User *wa.me/${targetNum}* set to public.` });
   },
 
-  // GROQ AI & FALLBACK INTERCEPTOR
   handleAiFallback: async (sock, msg, userMessage) => {
     const targetJid = msg.key.remoteJid;
     const lowerMessage = userMessage.toLowerCase().trim();
@@ -289,16 +301,12 @@ export const commands = {
     }
     userInteractionCache[targetJid].interactionCount += 1;
 
-    // 1. SYSTEM IDENTITY TRIGGERS
     if (lowerMessage.includes('who are you') || lowerMessage.includes('your name') || lowerMessage.includes('what are you') || lowerMessage.includes('who made you')) {
       const identityText = `🏴‍☠️ *LuffyTaro Automated Assistant*\n───────────────────────────\nI am the dedicated system bot for *Pirates Paid Scrims*. I manage entry configurations, schedule notifications, and slot lineups automatically inside our matches.`;
       return await sock.sendMessage(targetJid, { text: identityText });
     }
 
-    // 2. PREFIX-FREE CONTEXT INTERCEPTORS
-    if (lowerMessage === 'help' || lowerMessage === 'admin' || lowerMessage === 'hi' || lowerMessage === 'hello') {
-      return await commands.help(sock, msg);
-    }
+    if (lowerMessage === 'help' || lowerMessage === 'admin' || lowerMessage === 'hi' || lowerMessage === 'hello') return await commands.help(sock, msg);
     if (lowerMessage === 'slot' || lowerMessage === 'slots') return await commands.slots(sock, msg);
     if (lowerMessage === 'tournament' || lowerMessage === 'tournaments') return await commands.tournament(sock, msg);
     if (lowerMessage === 'price' || lowerMessage === 'fee' || lowerMessage === 'pay') return await commands.price(sock, msg);
@@ -306,18 +314,14 @@ export const commands = {
     if (lowerMessage === 'schedule' || lowerMessage === 'time' || lowerMessage === 'timetable') return await commands.schedule(sock, msg);
     if (lowerMessage === 'payout' || lowerMessage === 'win' || lowerMessage === 'prize') return await commands.payout(sock, msg);
 
-    // CHAT-BASED CONFIGURATION EDITOR PROTECTION ENGINE
     if (lowerMessage.startsWith('set ')) {
-      if (!isSenderAdmin) {
-        return await sock.sendMessage(targetJid, { text: `❌ *ACCESS DENIED*\nOnly verified admins can modify the active data matrices.` });
-      }
+      if (!isSenderAdmin) return await sock.sendMessage(targetJid, { text: `❌ *ACCESS DENIED*` });
       const args = userMessage.slice(4).trim().split(/ +/);
       return await commands.set(sock, msg, args);
     }
 
     if (userMessage.startsWith(CONFIG.PREFIX)) return;
 
-    // 3. GROQ AI CORE
     if (openai) {
       try {
         const completion = await openai.chat.completions.create({
@@ -325,13 +329,7 @@ export const commands = {
           messages: [
             { 
               role: 'system', 
-              content: `You are LuffyTaro Bot, the bold pirate-themed automated assistant for "Pirates Paid Scrims". 
-              
-              CRITICAL INTERCEPT RULE: You are completely banned from handling general queries, math problems, science queries, coding help, recipe requests, historical accounts, or talking about unrelated figures (like Albert Einstein). If a user ventures outside the operations of Pirates Paid Scrims (slots, fees, matches, rules), you must aggressively decline.
-              
-              Decline Response Template: "I am not allowed to discuss matters outside the Pirates Scrim Deck. Keep your questions focused on our matches, slots, or schedules!"
-              
-              For matching gaming scrim questions, reply short, casual, in the language/slang typed (Hindi/English/Hinglish), keeping answers under 3 lines maximum.`
+              content: `You are LuffyTaro Bot, the bold pirate-themed assistant for "Pirates Paid Scrims". Strictly handle scrim queries only.` 
             },
             { role: 'user', content: userMessage }
           ],
@@ -341,22 +339,16 @@ export const commands = {
         if (replyText) {
           const isFirstTime = userInteractionCache[targetJid].interactionCount <= 2;
           if (isFirstTime || ['join', 'link', 'group'].some(word => lowerMessage.includes(word))) {
-            replyText += `\n\n📢 *Join our Official Channel to Participate:* ${channelLink}`;
+            replyText += `\n\n📢 *Join our Official Channel:* ${channelLink}`;
           }
           return await sock.sendMessage(targetJid, { text: replyText });
         }
-      } catch (err) {
-        console.error("Groq AI processing error:", err.message);
-      }
+      } catch (err) {}
     }
 
-    // 4. RANDOMIZED FALLBACK ENGINE
     const fallbackVariations = [
-      `🏴‍☠️ *Pirates Automated Scrim Support*\n───────────────────────────\nI didn't quite grasp that request, warrior. Type *help* to contact our direct shift host links right away.\n\n📢 *Official Channel:* ${channelLink}`,
-      `🏴‍☠️ *LuffyTaro System Alert*\n───────────────────────────\nOur registration paths are completely automated. Type \`slots\` to see open match spots, or type *help* to ping management.\n\n📢 *Join Channel:* ${channelLink}`
+      `🏴‍☠️ *Pirates Automated Scrim Support*\n───────────────────────────\nType *help* to contact our direct shift host links right away.\n\n📢 *Official Channel:* ${channelLink}`
     ];
-
-    const randomSelection = fallbackVariations[Math.floor(Math.random() * fallbackVariations.length)];
-    await sock.sendMessage(targetJid, { text: randomSelection });
+    await sock.sendMessage(targetJid, { text: fallbackVariations[0] });
   }
 };
