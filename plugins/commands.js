@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
-import { CONFIG } from '../config.js'; 
 import OpenAI from 'openai';
+// Assuming CONFIG is needed elsewhere, keeping the import
+// import { CONFIG } from '../config.js'; 
 
 const openai = process.env.GROQ_API_KEY ? new OpenAI({ 
   apiKey: process.env.GROQ_API_KEY,
@@ -38,6 +39,8 @@ let SHIFT_ADMINS = {
 const DB_PATH = path.join(process.cwd(), 'database.json');
 
 const DEFAULT_DATABASE = {
+  welcome_enabled: true, // New key to track welcome state
+  goodbye_enabled: true, // New key to track goodbye state
   slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• B2B 4 Match (12:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (3:00 PM): 19/25 Slots Filled (Upcoming)\n• B2B 4 Match (6:00 PM): 05/25 Slots Filled (Upcoming)\n• B2B 4 Match (9:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (12:00 AM): 0/12 Slots Filled (Upcoming)\n\n💬 Send your team lineup to secure a position now!`,
   tournament: `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: N/A\n• Total Teams: N/A\n• Registration: N/A\n\nType \`price\` to check structural entrance points.`,
   price: `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single CS Match Entry: 10/20/30/40/50 RS per lineup\n• BR B2B (4 Matches): Upcoming \n• Free Tournament: Upcoming\n\nDM host or type \`payout\` to understand transaction structures.`,
@@ -49,6 +52,7 @@ let LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE };
 if (fs.existsSync(DB_PATH)) {
   try {
     const savedData = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+    // Merge saved data with default to add new keys if missing
     LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE, ...savedData };
   } catch (err) {
     console.error("Error reading database.json:", err.message);
@@ -62,6 +66,10 @@ function saveDatabase() {
     console.error("Error saving database.json:", err.message);
   }
 }
+
+// Accessor function for automation section
+export function isWelcomeEnabled() { return LIVE_SCRIM_DATABASE.welcome_enabled; }
+export function isGoodbyeEnabled() { return LIVE_SCRIM_DATABASE.goodbye_enabled; }
 
 export function getActiveAdminForTime() {
   const now = new Date();
@@ -131,8 +139,8 @@ export const commands = {
   menu: async (sock, msg) => {
     const text = `🏴‍☠️ *LuffyTaro System Commands* 🏴‍☠️\n───────────────────────────\n` +
       `• \`.menu\` / \`.help\` - Show this master command layout.\n` +
-      `• \`.welcome [on/off]\` - Toggle welcome messages.\n` +
-      `• \`.goodbye [on/off]\` - Toggle goodbye messages.\n` +
+      `• \`.welcome [on/off]\` - Toggle welcome messages (Current: ${LIVE_SCRIM_DATABASE.welcome_enabled ? 'ON' : 'OFF'}).\n` +
+      `• \`.goodbye [on/off]\` - Toggle goodbye messages (Current: ${LIVE_SCRIM_DATABASE.goodbye_enabled ? 'ON' : 'OFF'}).\n` +
       `• \`.slots\` - Query open matches and available slot layouts.\n` +
       `• \`.tournament\` - Details regarding ongoing official tournaments.\n` +
       `• \`.price\` - List entry fees and pricing sheets.\n` +
@@ -163,11 +171,41 @@ export const commands = {
   schedule: async (sock, msg) => { await sock.sendMessage(msg.key.remoteJid, { text: LIVE_SCRIM_DATABASE.schedule }); },
   payout: async (sock, msg) => { await sock.sendMessage(msg.key.remoteJid, { text: LIVE_SCRIM_DATABASE.payout }); },
 
+  // ==========================================
+  // 🛡️ ADMIN AUTAUTOMATION TOGGLES
+  // ==========================================
+  welcome: async (sock, msg, args) => {
+    const toggle = args[0]?.toLowerCase();
+    if (!toggle || !['on', 'off'].includes(toggle)) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ Usage: \`.welcome [on/off]\`` });
+    }
+
+    const state = toggle === 'on';
+    LIVE_SCRIM_DATABASE.welcome_enabled = state;
+    saveDatabase();
+
+    await sock.sendMessage(msg.key.remoteJid, { text: `${state ? '🟢' : '🔴'} *Welcome messages are now ${state ? 'ENABLED' : 'DISABLED'} permanently.*` });
+  },
+
+  goodbye: async (sock, msg, args) => {
+    const toggle = args[0]?.toLowerCase();
+    if (!toggle || !['on', 'off'].includes(toggle)) {
+      return await sock.sendMessage(msg.key.remoteJid, { text: `⚠️ Usage: \`.goodbye [on/off]\`` });
+    }
+
+    const state = toggle === 'on';
+    LIVE_SCRIM_DATABASE.goodbye_enabled = state;
+    saveDatabase();
+
+    await sock.sendMessage(msg.key.remoteJid, { text: `${state ? '🟢' : '🔴'} *Goodbye messages are now ${state ? 'ENABLED' : 'DISABLED'} permanently.*` });
+  },
+
   set: async (sock, msg, args) => {
     const targetProperty = args[0]?.toLowerCase();
     const cleanContent = args.slice(1).join(' ');
 
-    if (!targetProperty || !LIVE_SCRIM_DATABASE.hasOwnProperty(targetProperty)) {
+    const protectedProperties = ['welcome_enabled', 'goodbye_enabled'];
+    if (!targetProperty || protectedProperties.includes(targetProperty) || !LIVE_SCRIM_DATABASE.hasOwnProperty(targetProperty)) {
       return await sock.sendMessage(msg.key.remoteJid, { text: `❌ *Invalid Property Target!*\nUse: \`.set [slots/tournament/price/schedule/payout] [new text]\`` });
     }
     if (!cleanContent) {
