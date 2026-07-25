@@ -20,10 +20,38 @@ http.createServer((req, res) => {
 });
 
 // ==========================================
-// 2. MAIN BOT FUNCTION
+// 2. HELPER: EXTRACT SESSION ID FROM ENV
+// ==========================================
+function loadSessionFromEnv() {
+  const authFolder = './session';
+  const sessionId = process.env.SESSION_ID;
+
+  if (sessionId && !fs.existsSync(path.join(authFolder, 'creds.json'))) {
+    if (!fs.existsSync(authFolder)) {
+      fs.mkdirSync(authFolder, { recursive: true });
+    }
+
+    try {
+      // Remove custom prefixes if present (e.g., "LuffyTaro~", "Session~")
+      const rawBase64 = sessionId.includes('~') ? sessionId.split('~')[1] : sessionId;
+      const decodedData = Buffer.from(rawBase64, 'base64').toString('utf-8');
+      
+      fs.writeFileSync(path.join(authFolder, 'creds.json'), decodedData);
+      console.log('✅ SESSION_ID successfully extracted into ./session/creds.json');
+    } catch (err) {
+      console.error('❌ Failed to decode SESSION_ID:', err.message);
+    }
+  }
+}
+
+// ==========================================
+// 3. MAIN BOT FUNCTION
 // ==========================================
 async function startBot() {
-  // Save/Load session from local ./session folder
+  // Step A: Load session from SESSION_ID variable if present
+  loadSessionFromEnv();
+
+  // Step B: Initialize multi-file auth state
   const { state, saveCreds } = await useMultiFileAuthState('./session');
   const { version } = await fetchLatestBaileysVersion();
 
@@ -31,14 +59,13 @@ async function startBot() {
     version,
     logger: pino({ level: 'silent' }),
     auth: state,
-    browser: ['Ubuntu', 'Chrome', '20.0.04']
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    printQRInTerminal: false
   });
 
-  // ==========================================
-  // 3. PAIRING CODE GENERATOR
-  // ==========================================
+  // Step C: Fallback Pairing Code Generator (If not logged in via Session ID)
   if (!sock.authState.creds.registered) {
-    const phoneNumber = "919382276556"; // Your WhatsApp number
+    const phoneNumber = process.env.PHONE_NUMBER || "919382276556";
 
     setTimeout(async () => {
       try {
@@ -53,7 +80,7 @@ async function startBot() {
     }, 4000);
   }
 
-  // Save session credentials
+  // Save updated session credentials
   sock.ev.on('creds.update', saveCreds);
 
   // ==========================================
@@ -63,10 +90,14 @@ async function startBot() {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
-      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log('Connection closed. Reconnecting:', shouldReconnect);
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      
+      console.log(`Connection closed (code ${statusCode}). Reconnecting: ${shouldReconnect}`);
       if (shouldReconnect) {
         startBot();
+      } else {
+        console.error('❌ Logged out from WhatsApp. Clear your ./session folder or update SESSION_ID.');
       }
     } else if (connection === 'open') {
       console.log('✅ LuffyTaro Bot successfully connected to WhatsApp!');
@@ -74,14 +105,66 @@ async function startBot() {
   });
 
   // ==========================================
-  // 5. WELCOME MESSAGE FOR NEW MEMBERS
+  // 5. INCOMING MESSAGE HANDLER & COMMANDS
+  // ==========================================
+  sock.ev.on('messages.upsert', async (chatUpdate) => {
+    try {
+      const msg = chatUpdate.messages[0];
+      if (!msg || !msg.message || msg.key.fromMe) return;
+
+      const remoteJid = msg.key.remoteJid;
+      const body = msg.message.conversation || 
+                   msg.message.extendedTextMessage?.text || 
+                   msg.message.imageMessage?.caption || "";
+
+      if (!body.trim()) return;
+
+      const command = body.trim().toLowerCase();
+
+      // Command: .ping
+      if (command === '.ping') {
+        await sock.sendMessage(remoteJid, { text: '🏓 Pong! LuffyTaro Bot is online and ready.' }, { quoted: msg });
+        return;
+      }
+
+      // Command: .slots
+      if (command === '.slots') {
+        const slotsText = `📋 *PIRATE SCRIMS - SLOT REGISTRATION* 📋
+▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
+Slot 1: Reserve
+Slot 2: Open
+Slot 3: Open
+Slot 4: Open
+Slot 5: Open
+
+To reserve a slot, reply with your Team Name and Payment Reference ID!`;
+
+        await sock.sendMessage(remoteJid, { text: slotsText }, { quoted: msg });
+        return;
+      }
+
+      // Command: .help
+      if (command === '.help') {
+        await sock.sendMessage(remoteJid, { 
+          text: `🏴‍☠️ *LUFFYTARO BOT COMMANDS* 🏴‍☠️\n\n• *.slots* - View current match slots\n• *.ping* - Check bot latency\n• *.help* - Show command menu` 
+        }, { quoted: msg });
+        return;
+      }
+
+    } catch (err) {
+      console.error("Error handling message:", err);
+    }
+  });
+
+  // ==========================================
+  // 6. WELCOME MESSAGE FOR NEW MEMBERS
   // ==========================================
   sock.ev.on('group-participants.update', async (participantUpdate) => {
     const { id, participants, action } = participantUpdate;
 
     for (const userJid of participants) {
       if (action === 'add') {
-        console.log(`🏴‍☠️ New player joined group ${id}:${userJid}`);
+        console.log(`🏴‍☠️ New player joined group ${id}: ${userJid}`);
 
         const welcomeText = `🏴‍☠️ WELCOME TO PIRATE SCRIMS 🏴‍☠️
 ▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
@@ -102,7 +185,6 @@ Good luck, survivors! May the best squad plunder the loot. 💥`;
         const logoPath = path.join(process.cwd(), 'logo.png');
 
         try {
-          // Send with logo picture if logo.png exists in root folder
           if (fs.existsSync(logoPath)) {
             await sock.sendMessage(id, {
               image: fs.readFileSync(logoPath),
@@ -110,7 +192,6 @@ Good luck, survivors! May the best squad plunder the loot. 💥`;
               mentions: [userJid]
             });
           } else {
-            // Fallback to text message if logo isn't uploaded yet
             await sock.sendMessage(id, {
               text: welcomeText,
               mentions: [userJid]
