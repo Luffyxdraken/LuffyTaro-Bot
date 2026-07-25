@@ -1,42 +1,4 @@
-// ==========================================
-// 🛡️ DYNAMIC GROUP WELCOME & GOODBYE ENGINE
-// ==========================================
-
-let welcomeStatus = true;
-let goodbyeStatus = true;
-
-/**
- * Command handlers to toggle features on or off
- */
-export async function toggleWelcome(sock, msg, option) {
-  const choice = option?.toLowerCase();
-  if (choice === 'on' || choice === 'enable' || choice === 'active') {
-    welcomeStatus = true;
-    return await sock.sendMessage(msg.key.remoteJid, { text: `🟢 *WELCOME MESSAGES ENABLED*` });
-  } else if (choice === 'off' || choice === 'disable' || choice === 'deactivate') {
-    welcomeStatus = false;
-    return await sock.sendMessage(msg.key.remoteJid, { text: `🔴 *WELCOME MESSAGES DISABLED*` });
-  } else {
-    return await sock.sendMessage(msg.key.remoteJid, { 
-      text: `📌 *WELCOME SYSTEM STATUS:* ${welcomeStatus ? '🟢 ACTIVE' : '🔴 DISABLED'}\n\n💡 *Usage:* \`.welcome on\` or \`.welcome off\`` 
-    });
-  }
-}
-
-export async function toggleGoodbye(sock, msg, option) {
-  const choice = option?.toLowerCase();
-  if (choice === 'on' || choice === 'enable' || choice === 'active') {
-    goodbyeStatus = true;
-    return await sock.sendMessage(msg.key.remoteJid, { text: `🟢 *GOODBYE MESSAGES ENABLED*` });
-  } else if (choice === 'off' || choice === 'disable' || choice === 'deactivate') {
-    goodbyeStatus = false;
-    return await sock.sendMessage(msg.key.remoteJid, { text: `🔴 *GOODBYE MESSAGES DISABLED*` });
-  } else {
-    return await sock.sendMessage(msg.key.remoteJid, { 
-      text: `📌 *GOODBYE SYSTEM STATUS:* ${goodbyeStatus ? '🟢 ACTIVE' : '🔴 DISABLED'}\n\n💡 *Usage:* \`.goodbye on\` or \`.goodbye off\`` 
-    });
-  }
-}
+import { isWelcomeEnabled, isGoodbyeEnabled } from './commands.js';
 
 /**
  * Participant updates event handler
@@ -46,9 +8,9 @@ export async function handleGroupParticipants(sock, update) {
   
   if (!id.endsWith('@g.us')) return;
 
-  // Stop immediately if feature is toggled off
-  if (action === 'add' && !welcomeStatus) return;
-  if (action === 'remove' && !goodbyeStatus) return;
+  // Check persistent status from database.json
+  if (action === 'add' && !isWelcomeEnabled()) return;
+  if (action === 'remove' && !isGoodbyeEnabled()) return;
 
   // 📥 10 Short Welcome Variations - {user}
   const welcomeVariants = [
