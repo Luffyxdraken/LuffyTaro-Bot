@@ -1,209 +1,248 @@
-import makeWASocket, { 
-  useMultiFileAuthState, 
-  fetchLatestBaileysVersion, 
-  DisconnectReason 
-} from '@whiskeysockets/baileys';
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestWaWebVersion } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import http from 'http';
+import readline from 'readline';
+import { CONFIG } from './config.js'; 
+import { 
+  commands, 
+  getActiveAdminForTime, 
+  getAuthorizedPosterGroups, 
+  verifyAuthority, 
+  buildLobbyMessage, 
+  privateUsers,
+  isLoopActive
+} from './plugins/commands.js';
+import { handleGroupParticipants } from './plugins/automation.js';
 
 // ==========================================
-// 1. RENDER PORT HEALTHCHECK (Prevents Timeout)
+// 1. RENDER PORT HEALTH CHECK HTTP ENGINE
 // ==========================================
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('LuffyTaro Bot is Active and Running!');
+  res.end('LuffyTaro Bot System Online');
 }).listen(PORT, () => {
-  console.log(`🌐 Healthcheck server listening on port ${PORT}`);
+  console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
 });
 
-// ==========================================
-// 2. HELPER: EXTRACT SESSION ID FROM ENV
-// ==========================================
-function loadSessionFromEnv() {
-  const authFolder = './session';
-  const sessionId = process.env.SESSION_ID;
+// Helper: Safe input prompt for CLI
+const promptPhoneNumber = () => {
+  return new Promise((resolve) => {
+    if (!process.stdin.isTTY) return resolve(null);
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.question('\n📱 Enter WhatsApp Phone Number (with country code): ', (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+};
 
-  if (sessionId && !fs.existsSync(path.join(authFolder, 'creds.json'))) {
-    if (!fs.existsSync(authFolder)) {
-      fs.mkdirSync(authFolder, { recursive: true });
-    }
-
+// ==========================================
+// 2. CRYPTO DATA SESSION INITIALIZER
+// ==========================================
+async function initSession() {
+  if (CONFIG.SESSION_ID) {
+    if (!fs.existsSync(CONFIG.SESSION_DIR)) fs.mkdirSync(CONFIG.SESSION_DIR, { recursive: true });
+    const credsPath = path.join(CONFIG.SESSION_DIR, 'creds.json');
     try {
-      // Remove custom prefixes if present (e.g., "LuffyTaro~", "Session~")
-      const rawBase64 = sessionId.includes('~') ? sessionId.split('~')[1] : sessionId;
-      const decodedData = Buffer.from(rawBase64, 'base64').toString('utf-8');
-      
-      fs.writeFileSync(path.join(authFolder, 'creds.json'), decodedData);
-      console.log('✅ SESSION_ID successfully extracted into ./session/creds.json');
+      const base64Data = CONFIG.SESSION_ID.includes(';;;') 
+        ? CONFIG.SESSION_ID.split(';;;')[1] 
+        : CONFIG.SESSION_ID.includes('~') 
+          ? CONFIG.SESSION_ID.split('~')[1] 
+          : CONFIG.SESSION_ID;
+          
+      fs.writeFileSync(credsPath, Buffer.from(base64Data, 'base64').toString('utf-8'));
+      console.log('✅ SESSION_ID decoded into session credentials.');
     } catch (err) {
-      console.error('❌ Failed to decode SESSION_ID:', err.message);
+      console.error('❌ Emergency Session Restore Failure:', err.message);
     }
   }
 }
 
 // ==========================================
-// 3. MAIN BOT FUNCTION
+// 3. MAIN CORE ENGINE
 // ==========================================
 async function startBot() {
-  // Step A: Load session from SESSION_ID variable if present
-  loadSessionFromEnv();
-
-  // Step B: Initialize multi-file auth state
-  const { state, saveCreds } = await useMultiFileAuthState('./session');
-  const { version } = await fetchLatestBaileysVersion();
-
-  const sock = makeWASocket({
-    version,
-    logger: pino({ level: 'silent' }),
-    auth: state,
-    browser: ['Ubuntu', 'Chrome', '20.0.04'],
-    printQRInTerminal: false
-  });
-
-  // Step C: Fallback Pairing Code Generator (If not logged in via Session ID)
-  if (!sock.authState.creds.registered) {
-    const phoneNumber = process.env.PHONE_NUMBER || "919382276556";
-
-    setTimeout(async () => {
-      try {
-        let code = await sock.requestPairingCode(phoneNumber);
-        code = code?.match(/.{1,4}/g)?.join("-") || code;
-        console.log(`\n=================================`);
-        console.log(`🔑 YOUR PAIRING CODE: ${code}`);
-        console.log(`=================================\n`);
-      } catch (err) {
-        console.error("Error requesting pairing code:", err);
-      }
-    }, 4000);
+  let authState;
+  try {
+    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
+  } catch (err) {
+    console.error('⚠️ Session data corruption found! Cleaning old state folder...');
+    if (fs.existsSync(CONFIG.SESSION_DIR)) {
+      fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+    }
+    authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
   }
 
-  // Save updated session credentials
-  sock.ev.on('creds.update', saveCreds);
+  const { state, saveCreds } = authState;
+  let version = [2, 3000, 1017577546];
+  try {
+    const latest = await fetchLatestWaWebVersion();
+    if (latest && latest.version) version = latest.version;
+  } catch (e) {}
 
-  // ==========================================
-  // 4. CONNECTION HANDLING
-  // ==========================================
-  sock.ev.on('connection.update', (update) => {
+  const sock = makeWASocket({
+    logger: pino({ level: 'silent' }),
+    auth: state,
+    version,
+    printQRInTerminal: false,
+    browser: ['LuffyTaro Engine', 'Chrome', '1.0.0']
+  });
+
+  // Pairing Code Authentication (Render Friendly Fallback)
+  if (!sock.authState.creds.registered && !CONFIG.SESSION_ID) {
+    let phoneNumber = process.env.PHONE_NUMBER || CONFIG.OWNER_NUMBER || CONFIG.OWNER;
+
+    if (!phoneNumber) {
+      phoneNumber = await promptPhoneNumber();
+    }
+
+    phoneNumber = phoneNumber ? phoneNumber.replace(/[^0-9]/g, '') : '';
+
+    if (phoneNumber) {
+      setTimeout(async () => {
+        try {
+          let code = await sock.requestPairingCode(phoneNumber);
+          code = code?.match(/.{1,4}/g)?.join("-") || code;
+          console.log(`\n=================================`);
+          console.log(`🔑 YOUR PAIRING CODE: ${code}`);
+          console.log(`=================================\n`);
+        } catch (err) {
+          console.error("Error requesting pairing code:", err.message);
+        }
+      }, 4000);
+    } else {
+      console.error('⚠️ Non-interactive environment detected. Set PHONE_NUMBER or SESSION_ID in Render variables.');
+    }
+  }
+
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
+  setInterval(async () => {
+    try {
+      if (!isLoopActive()) return;
+
+      const activeAdmin = getActiveAdminForTime();
+      if (!activeAdmin) return; 
+
+      const targetGroupIds = getAuthorizedPosterGroups();
+      if (targetGroupIds.length === 0) return;
+
+      const lobbyMessage = buildLobbyMessage();
+      for (const groupId of targetGroupIds) {
+        try {
+          await sock.sendMessage(groupId, { text: lobbyMessage });
+          await new Promise(r => setTimeout(r, 2000)); // Anti-ban pacing
+        } catch (e) {
+          console.error(`Loop error dispatching to group ${groupId}:`, e.message);
+        }
+      }
+    } catch (err) {
+      console.error("Global broadcasting engine processing exception:", err);
+    }
+  }, 15 * 60 * 1000);
+
+  // Connection State Handling
+  sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       
-      console.log(`Connection closed (code ${statusCode}). Reconnecting: ${shouldReconnect}`);
-      if (shouldReconnect) {
-        startBot();
-      } else {
-        console.error('❌ Logged out from WhatsApp. Clear your ./session folder or update SESSION_ID.');
+      if (lastDisconnect?.error?.message?.includes('Unsupported state')) {
+        console.log('🚨 Crypto state error isolated. Cleaning local state files and recycling session...');
+        if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
+        setTimeout(() => startBot(), 2000);
+      } else if (statusCode !== DisconnectReason.loggedOut) {
+        setTimeout(() => startBot(), 5000);
       }
-    } else if (connection === 'open') {
-      console.log('✅ LuffyTaro Bot successfully connected to WhatsApp!');
     }
-  });
-
-  // ==========================================
-  // 5. INCOMING MESSAGE HANDLER & COMMANDS
-  // ==========================================
-  sock.ev.on('messages.upsert', async (chatUpdate) => {
-    try {
-      const msg = chatUpdate.messages[0];
-      if (!msg || !msg.message || msg.key.fromMe) return;
-
-      const remoteJid = msg.key.remoteJid;
-      const body = msg.message.conversation || 
-                   msg.message.extendedTextMessage?.text || 
-                   msg.message.imageMessage?.caption || "";
-
-      if (!body.trim()) return;
-
-      const command = body.trim().toLowerCase();
-
-      // Command: .ping
-      if (command === '.ping') {
-        await sock.sendMessage(remoteJid, { text: '🏓 Pong! LuffyTaro Bot is online and ready.' }, { quoted: msg });
-        return;
-      }
-
-      // Command: .slots
-      if (command === '.slots') {
-        const slotsText = `📋 *PIRATE SCRIMS - SLOT REGISTRATION* 📋
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-Slot 1: Reserve
-Slot 2: Open
-Slot 3: Open
-Slot 4: Open
-Slot 5: Open
-
-To reserve a slot, reply with your Team Name and Payment Reference ID!`;
-
-        await sock.sendMessage(remoteJid, { text: slotsText }, { quoted: msg });
-        return;
-      }
-
-      // Command: .help
-      if (command === '.help') {
-        await sock.sendMessage(remoteJid, { 
-          text: `🏴‍☠️ *LUFFYTARO BOT COMMANDS* 🏴‍☠️\n\n• *.slots* - View current match slots\n• *.ping* - Check bot latency\n• *.help* - Show command menu` 
-        }, { quoted: msg });
-        return;
-      }
-
-    } catch (err) {
-      console.error("Error handling message:", err);
-    }
-  });
-
-  // ==========================================
-  // 6. WELCOME MESSAGE FOR NEW MEMBERS
-  // ==========================================
-  sock.ev.on('group-participants.update', async (participantUpdate) => {
-    const { id, participants, action } = participantUpdate;
-
-    for (const userJid of participants) {
-      if (action === 'add') {
-        console.log(`🏴‍☠️ New player joined group ${id}: ${userJid}`);
-
-        const welcomeText = `🏴‍☠️ WELCOME TO PIRATE SCRIMS 🏴‍☠️
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-
-Ahoy, @${userJid.split('@')[0]}! You have entered the deadliest Free Fire battleground. Get your squad ready for ultimate glory!
-
-☠️ TOURNAMENT RULES:
-• No hacks / No third-party modules (Instant Ban)
-• Emulators are strictly prohibited unless specified
-• Team registration must match your payment receipt
-
-💰 PAID MATCH DETAILS:
-• Daily dynamic prize pools distributed via auto-payout
-• Drop your team slot list by typing: .slots
-
-Good luck, survivors! May the best squad plunder the loot. 💥`;
-
-        const logoPath = path.join(process.cwd(), 'logo.png');
-
+    
+    if (connection === 'open') {
+      console.log('✅ LuffyTaro Engine Connected Successfully!');
+      let rawOwner = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '').replace(/[^0-9]/g, '');
+      if (rawOwner) {
+        if (!rawOwner.startsWith('91') && rawOwner.length === 10) rawOwner = '91' + rawOwner;
+        const ownerJid = `${rawOwner}@s.whatsapp.net`;
         try {
-          if (fs.existsSync(logoPath)) {
-            await sock.sendMessage(id, {
-              image: fs.readFileSync(logoPath),
-              caption: welcomeText,
-              mentions: [userJid]
-            });
-          } else {
-            await sock.sendMessage(id, {
-              text: welcomeText,
-              mentions: [userJid]
-            });
-          }
-        } catch (err) {
-          console.error("Failed to send welcome message:", err);
-        }
+          const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
+          await sock.sendMessage(ownerJid, { text: aliveAlert });
+        } catch (err) {}
       }
+    }
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+  
+  sock.ev.on('group-participants.update', async (update) => {
+    try { await handleGroupParticipants(sock, update); } catch (e) {}
+  });
+
+  // ==========================================
+  // 4. CHAT SYSTEM FLOW ROUTER
+  // ==========================================
+  sock.ev.on('messages.upsert', async ({ messages }) => {
+    const msg = messages[0];
+    if (!msg || !msg.message || msg.key.fromMe) return;
+
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const isGroup = msg.key.remoteJid.endsWith('@g.us');
+    const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || '';
+
+    if (!text) return;
+    
+    const isOwnerOrAdmin = verifyAuthority(sender);
+    const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+    // 🔒 PRIVACY BYPASS ENGINE
+    if (privateUsers.includes(cleanSenderNum)) return; 
+
+    // ⚡ Pipeline 1: Command Executions (Starts with Prefix)
+    if (text.startsWith(CONFIG.PREFIX)) {
+      const args = text.slice(CONFIG.PREFIX.length).trim().split(/ +/);
+      const commandName = args.shift().toLowerCase();
+
+      // Owner Override Module
+      if (commandName === 'owner') {
+        const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
+        await sock.sendMessage(msg.key.remoteJid, { 
+          text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
+        });
+        return;
+      }
+
+      if (commands[commandName]) {
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
+        
+        if (adminOnlyCmds.includes(commandName)) {
+          if (isOwnerOrAdmin) {
+            try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
+          } else {
+            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+          }
+        } else {
+          try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
+        }
+      } else {
+        try { await commands.menu(sock, msg); } catch (err) { console.error(err); }
+      }
+      return; 
+    }
+
+    // ⚡ Pipeline 2: Conversational Engine (Only active inside Private Messages)
+    if (isGroup) return;
+
+    try {
+      await commands.handleAiFallback(sock, msg, text);
+    } catch (e) {
+      console.error("AI execution fallback channel error:", e);
     }
   });
 }
 
-// Start the bot
-startBot();
+async function run() {
+  await initSession();
+  await startBot();
+}
+run();
