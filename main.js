@@ -27,6 +27,9 @@ http.createServer((req, res) => {
   console.log(`📡 Render Port Healthcheck mapping verified on port ${PORT}`);
 });
 
+// Global reference for loop timer management
+let broadcastInterval = null;
+
 // Helper: Safe input prompt for CLI
 const promptPhoneNumber = () => {
   return new Promise((resolve) => {
@@ -38,6 +41,21 @@ const promptPhoneNumber = () => {
     });
   });
 };
+
+// Helper: Safe message sending wrapper
+async function safeSendMessage(sock, jid, content) {
+  try {
+    if (!sock || !sock.ws || sock.ws.socket?.readyState !== 1) {
+      console.log(`⚠️ Socket disconnected or not ready. Skipping dispatch to ${jid}`);
+      return false;
+    }
+    await sock.sendMessage(jid, content);
+    return true;
+  } catch (err) {
+    console.error(`Loop error dispatching to group ${jid}:`, err.message);
+    return false;
+  }
+}
 
 // ==========================================
 // 2. CRYPTO DATA SESSION INITIALIZER
@@ -65,6 +83,12 @@ async function initSession() {
 // 3. MAIN CORE ENGINE
 // ==========================================
 async function startBot() {
+  // Clear any pre-existing broadcast loop interval on reconnect
+  if (broadcastInterval) {
+    clearInterval(broadcastInterval);
+    broadcastInterval = null;
+  }
+
   let authState;
   try {
     authState = await useMultiFileAuthState(CONFIG.SESSION_DIR);
@@ -118,8 +142,8 @@ async function startBot() {
     }
   }
 
-  // 🕒 Automated 15-Minute Dynamic Broadcast Loop
-  setInterval(async () => {
+  // 🕒 Automated 15-Minute Dynamic Broadcast Loop attached to THIS socket instance
+  broadcastInterval = setInterval(async () => {
     try {
       if (!isLoopActive()) return;
 
@@ -130,12 +154,12 @@ async function startBot() {
       if (targetGroupIds.length === 0) return;
 
       const lobbyMessage = buildLobbyMessage();
+      if (!lobbyMessage) return;
+
       for (const groupId of targetGroupIds) {
-        try {
-          await sock.sendMessage(groupId, { text: lobbyMessage });
-          await new Promise(r => setTimeout(r, 2000)); // Anti-ban pacing
-        } catch (e) {
-          console.error(`Loop error dispatching to group ${groupId}:`, e.message);
+        const sent = await safeSendMessage(sock, groupId, { text: lobbyMessage });
+        if (sent) {
+          await new Promise(r => setTimeout(r, 3500)); // Anti-ban pacing
         }
       }
     } catch (err) {
@@ -148,6 +172,11 @@ async function startBot() {
     const { connection, lastDisconnect } = update;
     
     if (connection === 'close') {
+      if (broadcastInterval) {
+        clearInterval(broadcastInterval);
+        broadcastInterval = null;
+      }
+
       const statusCode = lastDisconnect?.error?.output?.statusCode;
       
       if (lastDisconnect?.error?.message?.includes('Unsupported state')) {
@@ -155,6 +184,7 @@ async function startBot() {
         if (fs.existsSync(CONFIG.SESSION_DIR)) fs.rmSync(CONFIG.SESSION_DIR, { recursive: true, force: true });
         setTimeout(() => startBot(), 2000);
       } else if (statusCode !== DisconnectReason.loggedOut) {
+        console.log('🔄 Reconnecting LuffyTaro Engine in 5 seconds...');
         setTimeout(() => startBot(), 5000);
       }
     }
@@ -167,7 +197,7 @@ async function startBot() {
         const ownerJid = `${rawOwner}@s.whatsapp.net`;
         try {
           const aliveAlert = `🚀 *LuffyTaro Engine Status Update* 🚀\n\nSystem successfully deployed and operational on cloud clusters! Ready to receive matchmaking traffic.`;
-          await sock.sendMessage(ownerJid, { text: aliveAlert });
+          await safeSendMessage(sock, ownerJid, { text: aliveAlert });
         } catch (err) {}
       }
     }
@@ -192,7 +222,7 @@ async function startBot() {
 
     if (!text) return;
     
-    const isOwnerOrAdmin = verifyAuthority(sender);
+    const isOwnerOrAdmin = verifyAuthority(sender, msg);
     const cleanSenderNum = sender.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 
     // 🔒 PRIVACY BYPASS ENGINE
@@ -206,20 +236,20 @@ async function startBot() {
       // Owner Override Module
       if (commandName === 'owner') {
         const ownerNum = (CONFIG.OWNER_NUMBER || CONFIG.OWNER || '917866052212').replace(/[^0-9]/g, '');
-        await sock.sendMessage(msg.key.remoteJid, { 
+        await safeSendMessage(sock, msg.key.remoteJid, { 
           text: `🏴‍☠️ *BOT OWNER PROFILE*\n───────────────────────────\n\nThis system is managed and maintained by:\n📱 *WhatsApp:* wa.me/${ownerNum}\n\nContact the owner directly for hosting setup queries or structural requests.` 
         });
         return;
       }
 
       if (commands[commandName]) {
-        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost'];
+        const adminOnlyCmds = ['authorize', 'unauthorize', 'private', 'public', 'activate', 'deactivate', 'status', 'testpost', 'welcome', 'goodbye', 'set', 'setadmin'];
         
         if (adminOnlyCmds.includes(commandName)) {
           if (isOwnerOrAdmin) {
             try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
           } else {
-            await sock.sendMessage(msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
+            await safeSendMessage(sock, msg.key.remoteJid, { text: `❌ *ACCESS DENIED* ❌\n───────────────────────────\nYour ID (\`${cleanSenderNum}\`) does not hold admin clearance tags.` });
           }
         } else {
           try { await commands[commandName](sock, msg, args, text); } catch (err) { console.error(err); }
