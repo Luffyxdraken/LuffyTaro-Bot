@@ -1,8 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import OpenAI from 'openai';
-// Assuming CONFIG is needed elsewhere, keeping the import
-// import { CONFIG } from '../config.js'; 
 
 const openai = process.env.GROQ_API_KEY ? new OpenAI({ 
   apiKey: process.env.GROQ_API_KEY,
@@ -39,8 +37,8 @@ let SHIFT_ADMINS = {
 const DB_PATH = path.join(process.cwd(), 'database.json');
 
 const DEFAULT_DATABASE = {
-  welcome_enabled: true, // New key to track welcome state
-  goodbye_enabled: true, // New key to track goodbye state
+  welcome_enabled: true,
+  goodbye_enabled: true,
   slots: `📊 *CURRENT SCRIM SLOTS STATUS*\n───────────────────────────\n• B2B 4 Match (12:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (3:00 PM): 19/25 Slots Filled (Upcoming)\n• B2B 4 Match (6:00 PM): 05/25 Slots Filled (Upcoming)\n• B2B 4 Match (9:00 PM): 0/12 Slots Filled (Upcoming)\n• B2B 4 Match (12:00 AM): 0/12 Slots Filled (Upcoming)\n\n💬 Send your team lineup to secure a position now!`,
   tournament: `🏆 *PIRATES GRAND TOURNAMENT* 🏆\n───────────────────────────\n• Pool Prize: N/A\n• Total Teams: N/A\n• Registration: N/A\n\nType \`price\` to check structural entrance points.`,
   price: `💰 *PAID SCRIMS PRICING STRUCTURE*\n───────────────────────────\n• Single CS Match Entry: 10/20/30/40/50 RS per lineup\n• BR B2B (4 Matches): Upcoming \n• Free Tournament: Upcoming\n\nDM host or type \`payout\` to understand transaction structures.`,
@@ -52,7 +50,6 @@ let LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE };
 if (fs.existsSync(DB_PATH)) {
   try {
     const savedData = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
-    // Merge saved data with default to add new keys if missing
     LIVE_SCRIM_DATABASE = { ...DEFAULT_DATABASE, ...savedData };
   } catch (err) {
     console.error("Error reading database.json:", err.message);
@@ -67,7 +64,6 @@ function saveDatabase() {
   }
 }
 
-// Accessor function for automation section
 export function isWelcomeEnabled() { return LIVE_SCRIM_DATABASE.welcome_enabled; }
 export function isGoodbyeEnabled() { return LIVE_SCRIM_DATABASE.goodbye_enabled; }
 
@@ -89,6 +85,9 @@ export function getActiveAdminForTime() {
   return null;
 }
 
+// ==========================================
+// 🔄 DYNAMIC BROADCAST VARIANT ROTATOR
+// ==========================================
 export function buildLobbyMessage() {
   const currentAdmin = getActiveAdminForTime();
   if (!currentAdmin) return null;
@@ -171,9 +170,6 @@ export const commands = {
   schedule: async (sock, msg) => { await sock.sendMessage(msg.key.remoteJid, { text: LIVE_SCRIM_DATABASE.schedule }); },
   payout: async (sock, msg) => { await sock.sendMessage(msg.key.remoteJid, { text: LIVE_SCRIM_DATABASE.payout }); },
 
-  // ==========================================
-  // 🛡️ ADMIN AUTAUTOMATION TOGGLES
-  // ==========================================
   welcome: async (sock, msg, args) => {
     const toggle = args[0]?.toLowerCase();
     if (!toggle || !['on', 'off'].includes(toggle)) {
@@ -372,7 +368,6 @@ export const commands = {
       } catch (err) {}
     }
 
-    // Silent fallback — no automatic menu message on unknown DM messages
     return;
   }
 };
